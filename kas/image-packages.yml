@@ -1,0 +1,41 @@
+# =============================================================================
+# kas/image-packages.yml — Rootfs image package configuration
+# =============================================================================
+# Add anything that should be INSTALLED ON THE JETSON here.
+# These packages become part of the rootfs image (demo-image-base).
+#
+# Syntax:
+#   IMAGE_INSTALL:append = " package-name another-package"
+#                           ^-- leading space is required
+#
+# Find available packages:
+#   kas shell kas-project.yml -c "bitbake -s | grep <pattern>"
+# Check package dependencies:
+#   kas shell kas-project.yml -c "bitbake -g <package> && cat pn-depends.dot"
+# =============================================================================
+header:
+  version: 14
+
+local_conf_header:
+
+  # --- Core runtime utilities ---
+  # Uncomment or add packages needed on the Jetson at runtime.
+  image-base: |
+    IMAGE_INSTALL:append = ""
+    # Examples — remove the leading # and add a space before the package name:
+    # IMAGE_INSTALL:append = " htop strace lsof"
+    # IMAGE_INSTALL:append = " python3 python3-pip python3-numpy"
+    # IMAGE_INSTALL:append = " openssh-server"
+    # IMAGE_INSTALL:append = " can-utils ethtool iproute2"
+
+  # --- AI / ML inference runtime ---
+  # Requires meta-tegra layers and appropriate CUDA/TensorRT recipes.
+  image-ai: |
+    # IMAGE_INSTALL:append = " tensorrt cuda-libraries"
+    # IMAGE_INSTALL:append = " onnxruntime"
+
+  # --- Debug & diagnostics (for overlayfs / rw builds only) ---
+  # WARNING: Do not enable in production (ro/dm-verity) builds.
+  image-debug: |
+    # IMAGE_INSTALL:append = " gdb valgrind perf"
+    # IMAGE_INSTALL:append = " tcpdump wireshark-cli"

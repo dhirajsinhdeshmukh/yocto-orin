@@ -1,82 +1,27 @@
 # =============================================================================
 # kas-project.yml — Hardened Jetson Orin Nano BSP (dm-verity + read-only rootfs)
 # =============================================================================
-# Build:  kas build kas-project.yml
-# Shell:  kas shell kas-project.yml -c "bitbake-layers show-layers"
-# Override merge:  kas build kas-project.yml:/tmp/kas-override.yml
+# This is the TOP-LEVEL entry point. It declares hardware target and includes
+# the composable sub-configs from kas/. Edit sub-configs for specific concerns:
+#
+#   kas/layers.yml           → Add/update Yocto layer repos & commit pins
+#   kas/local-conf.yml       → Build system settings (cache, dm-verity, tuning)
+#   kas/image-packages.yml   → Packages installed ON the Jetson (rootfs)
+#   kas/sdk.yml              → Cross-compile SDK host tools & target sysroot libs
+#
+# Build:          kas build kas-project.yml
+# Shell:          kas shell kas-project.yml -c "bitbake-layers show-layers"
+# Override merge: kas build kas-project.yml:/tmp/kas-override.yml
 # =============================================================================
 header:
   version: 14
-  includes: []
+  includes:
+    - kas/layers.yml
+    - kas/local-conf.yml
+    - kas/image-packages.yml
+    - kas/sdk.yml
 
 machine: jetson-orin-nano-devkit-nvme
 distro: tegra
 target:
   - demo-image-base
-
-# ---------------------------------------------------------------------------
-# Layer repositories — pinned to scarthgap HEAD as of 2026-04-12
-# To update: git ls-remote <url> refs/heads/scarthgap | cut -f1
-# ---------------------------------------------------------------------------
-repos:
-  poky:
-    url: "https://git.yoctoproject.org/poky"
-    refspec: 8643f911602949518c5c5474726b49f943e36b83
-    layers:
-      meta:
-      meta-poky:
-      meta-yocto-bsp:
-
-  meta-tegra:
-    url: "https://github.com/OE4T/meta-tegra.git"
-    refspec: 891fc9e6d89da207a5496d9d611cf1d8982c1f45
-    layers:
-      meta-tegra:
-
-  meta-security:
-    url: "https://git.yoctoproject.org/meta-security"
-    refspec: b13f1705d723650de61277670c8a76aadea4cfdd
-    layers:
-      meta-security:
-
-  meta-physical-ai:
-    path: meta-physical-ai
-    layers:
-      .:
-
-# ---------------------------------------------------------------------------
-# local.conf overrides
-# ---------------------------------------------------------------------------
-local_conf_header:
-
-  # --- Init system: systemd ---
-  init: |
-    INIT_MANAGER = "systemd"
-    DISTRO_FEATURES:append = " systemd"
-    DISTRO_FEATURES:remove = "sysvinit"
-    VIRTUAL-RUNTIME_init_manager = "systemd"
-    VIRTUAL-RUNTIME_initscripts = "systemd-compat-units"
-
-  # --- Persistent download & sstate cache ---
-  cache: |
-    DL_DIR ?= "${TOPDIR}/../downloads"
-    SSTATE_DIR ?= "${TOPDIR}/../sstate-cache"
-
-  # --- dm-verity (RSA-3K signed) ---
-  dm-verity: |
-    INHERIT += "dm-verity-img"
-    DM_VERITY_IMAGE = "demo-image-base"
-    DM_VERITY_IMAGE_TYPE = "ext4"
-    DM_VERITY_SIGNING_KEY = "${TOPDIR}/../keys/dm-verity/rsa3k-key.pem"
-    DM_VERITY_SIGNING_CERT = "${TOPDIR}/../keys/dm-verity/rsa3k-cert.pem"
-
-  # --- Security hardening ---
-  hardening: |
-    IMAGE_FEATURES:remove = "debug-tweaks"
-    EXTRA_IMAGE_FEATURES = ""
-    IMAGE_FEATURES:append = " read-only-rootfs"
-
-  # --- Build tuning (defaults, overridden by build.sh) ---
-  tuning: |
-    BB_NUMBER_THREADS ?= "${@int(os.cpu_count() * 0.8)}"
-    PARALLEL_MAKE ?= "-j ${@int(os.cpu_count() * 0.8)}"

@@ -1,0 +1,51 @@
+# =============================================================================
+# kas/sdk.yml — Yocto SDK package configuration
+# =============================================================================
+# Defines what ends up in the cross-compilation SDK Docker container.
+# Build the SDK with:
+#   ./build.sh -- --cmd "bitbake demo-image-base -c populate_sdk"
+#
+# Two independent axes:
+#
+#   TOOLCHAIN_HOST_TASK:append   — tools that run ON THE BUILD HOST inside the
+#                                  SDK shell (cmake, ninja, pkg-config, etc.)
+#
+#   TOOLCHAIN_TARGET_TASK:append — headers and libraries built for aarch64 that
+#                                  your code links AGAINST (sysroot contents).
+#                                  Package names mirror rootfs names with the
+#                                  same recipe but built for target arch.
+#
+# Find nativesdk packages:
+#   kas shell kas-project.yml -c "bitbake -s | grep nativesdk"
+# =============================================================================
+header:
+  version: 14
+
+local_conf_header:
+
+  # --- SDK host tools (run on x86-64 build machine) ---
+  sdk-host: |
+    TOOLCHAIN_HOST_TASK:append = " \
+        nativesdk-cmake \
+        nativesdk-ninja \
+        nativesdk-pkgconfig \
+        nativesdk-python3 \
+        nativesdk-python3-pip \
+    "
+    # Add more host tools as needed:
+    # TOOLCHAIN_HOST_TASK:append = " nativesdk-clang"
+    # TOOLCHAIN_HOST_TASK:append = " nativesdk-rust"
+
+  # --- SDK target sysroot (aarch64 headers + libs for cross-compilation) ---
+  sdk-target: |
+    TOOLCHAIN_TARGET_TASK:append = " \
+        libssl-dev \
+        libcurl-dev \
+        zlib-dev \
+    "
+    # Add headers/libs your application needs to link against:
+    # TOOLCHAIN_TARGET_TASK:append = " glib-2.0-dev"
+    # TOOLCHAIN_TARGET_TASK:append = " boost-dev"
+    # TOOLCHAIN_TARGET_TASK:append = " opencv-dev"
+    # TOOLCHAIN_TARGET_TASK:append = " protobuf-dev"
+    # TOOLCHAIN_TARGET_TASK:append = " onnxruntime-dev"

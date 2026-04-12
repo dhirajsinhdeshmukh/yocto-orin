@@ -1,0 +1,52 @@
+# =============================================================================
+# kas/local-conf.yml — Build system configuration (local.conf overrides)
+# =============================================================================
+# Contains: init manager, cache paths, dm-verity signing, security hardening,
+# and build parallelism tuning. These are build-system concerns — not image
+# content. For image packages see image-packages.yml, for SDK see sdk.yml.
+# =============================================================================
+header:
+  version: 14
+
+local_conf_header:
+
+  # --- Init system: systemd ---
+  init: |
+    INIT_MANAGER = "systemd"
+    DISTRO_FEATURES:append = " systemd"
+    DISTRO_FEATURES:remove = "sysvinit"
+    VIRTUAL-RUNTIME_init_manager = "systemd"
+    VIRTUAL-RUNTIME_initscripts = "systemd-compat-units"
+
+  # --- Persistent download & sstate cache ---
+  # Paths are relative to the workspace root (one level above the build dir).
+  # Share these directories across machines via NFS for faster rebuilds.
+  cache: |
+    DL_DIR ?= "${TOPDIR}/../downloads"
+    SSTATE_DIR ?= "${TOPDIR}/../sstate-cache"
+
+  # --- dm-verity (RSA-3K signed) ---
+  # Keys must be generated before build — see README.md § DM-Verity Signing.
+  # Keys are excluded from git via .gitignore.
+  # Disable: build.sh --no-dm-verity  (injects INHERIT:remove = "dm-verity-img")
+  dm-verity: |
+    INHERIT += "dm-verity-img"
+    DM_VERITY_IMAGE = "demo-image-base"
+    DM_VERITY_IMAGE_TYPE = "ext4"
+    DM_VERITY_SIGNING_KEY = "${TOPDIR}/../keys/dm-verity/rsa3k-key.pem"
+    DM_VERITY_SIGNING_CERT = "${TOPDIR}/../keys/dm-verity/rsa3k-cert.pem"
+
+  # --- Security hardening ---
+  # Removes debug-tweaks (empty root password, debug serial) from the image.
+  # read-only-rootfs is also enforced via systemd drop-in in meta-physical-ai.
+  hardening: |
+    IMAGE_FEATURES:remove = "debug-tweaks"
+    EXTRA_IMAGE_FEATURES = ""
+    IMAGE_FEATURES:append = " read-only-rootfs"
+
+  # --- Build tuning (defaults, overridden at runtime by build.sh) ---
+  # build.sh --cores N will inject BB_NUMBER_THREADS/PARALLEL_MAKE overrides
+  # via a kas merge config, superseding these defaults.
+  tuning: |
+    BB_NUMBER_THREADS ?= "${@int(os.cpu_count() * 0.8)}"
+    PARALLEL_MAKE ?= "-j ${@int(os.cpu_count() * 0.8)}"

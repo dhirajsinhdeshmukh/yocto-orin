@@ -1,0 +1,79 @@
+# =============================================================================
+# kas/layers.yml — Layer repository definitions
+# =============================================================================
+# All Yocto layer sources are declared here with pinned commit SHAs.
+# To update a layer to latest scarthgap HEAD:
+#   git ls-remote <url> refs/heads/scarthgap | cut -f1
+# Then replace the refspec below and test with: kas check kas-project.yml
+# =============================================================================
+header:
+  version: 14
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Poky (OE-Core + bitbake) — scarthgap @ 2026-04-12
+  # ---------------------------------------------------------------------------
+  poky:
+    url: "https://git.yoctoproject.org/poky"
+    refspec: 8643f911602949518c5c5474726b49f943e36b83
+    layers:
+      meta:
+      meta-poky:
+      meta-yocto-bsp:
+
+  # ---------------------------------------------------------------------------
+  # meta-tegra — NVIDIA Jetson BSP (MACHINE defs, l4t kernel, flash tools)
+  # scarthgap @ 2026-04-12
+  # ---------------------------------------------------------------------------
+  meta-tegra:
+    url: "https://github.com/OE4T/meta-tegra.git"
+    refspec: 891fc9e6d89da207a5496d9d611cf1d8982c1f45
+    layers:
+      meta-tegra:
+
+  # ---------------------------------------------------------------------------
+  # meta-security — dm-verity, IMA, TPM, AppArmor support
+  # scarthgap @ 2026-04-12
+  # ---------------------------------------------------------------------------
+  meta-security:
+    url: "https://git.yoctoproject.org/meta-security"
+    refspec: b13f1705d723650de61277670c8a76aadea4cfdd
+    layers:
+      meta-security:
+
+  # ---------------------------------------------------------------------------
+  # meta-physical-ai — local custom layer (read-only rootfs, overlayfs)
+  # ---------------------------------------------------------------------------
+  meta-physical-ai:
+    path: meta-physical-ai
+    layers:
+      .:
+
+  # ---------------------------------------------------------------------------
+  # ADDITIONAL LAYERS — uncomment and pin as needed
+  # ---------------------------------------------------------------------------
+
+  # meta-openembedded (provides meta-oe, meta-python, meta-networking, meta-multimedia)
+  # meta-openembedded:
+  #   url: "https://git.openembedded.org/meta-openembedded"
+  #   refspec: <pinned-sha>    # git ls-remote ... refs/heads/scarthgap
+  #   layers:
+  #     meta-oe:
+  #     meta-python:
+  #     meta-networking:
+  #     meta-multimedia:
+
+  # meta-clang (LLVM/Clang toolchain alternative)
+  # meta-clang:
+  #   url: "https://github.com/kraj/meta-clang.git"
+  #   refspec: <pinned-sha>
+  #   layers:
+  #     meta-clang:
+
+  # meta-ros (ROS 2 Jazzy on Jetson)
+  # meta-ros:
+  #   url: "https://github.com/ros/meta-ros.git"
+  #   refspec: <pinned-sha>
+  #   layers:
+  #     meta-ros2:
+  #     meta-ros2-jazzy:

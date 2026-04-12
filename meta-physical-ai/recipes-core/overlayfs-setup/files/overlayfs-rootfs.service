@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT
+#
+# overlayfs-rootfs.service — mount a volatile overlayfs on top of the
+# read-only root filesystem. Upper/work dirs are backed by tmpfs (RAM),
+# so all writes are discarded on reboot.
+
+[Unit]
+Description=Mount tmpfs-backed overlayfs on read-only rootfs
+DefaultDependencies=no
+RequiresMountsFor=/
+Before=local-fs.target
+After=-.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# 1. Mount tmpfs for writable layers (size=256M — tune as needed)
+ExecStart=/bin/mount -t tmpfs -o size=256M,mode=0755 tmpfs /overlay
+
+# 2. Create upper + work directories on tmpfs
+ExecStart=/bin/mkdir -p /overlay/upper /overlay/work
+
+# 3. Mount the overlay: lower=real rootfs, upper+work=tmpfs
+ExecStart=/bin/mount -t overlay overlay \
+    -o lowerdir=/,upperdir=/overlay/upper,workdir=/overlay/work \
+    /overlay/merged
+
+[Install]
+WantedBy=local-fs.target

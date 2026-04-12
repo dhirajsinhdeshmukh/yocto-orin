@@ -1,0 +1,8 @@
+# Exclude heavy build artifacts from Docker build context
+build/
+downloads/
+sstate-cache/
+keys/
+.git/
+*.pyc
+__pycache__/

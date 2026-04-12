@@ -1,0 +1,19 @@
+# CODEOWNERS — Jetson Orin Nano BSP
+# Syntax: <pattern> <@user-or-team>
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback
+*                               @dhirajsinhdeshmukh
+
+# Layer pins / build config — requires review for any SHA update
+kas/                            @dhirajsinhdeshmukh
+kas-project.yml                 @dhirajsinhdeshmukh
+
+# Security-sensitive files — extra scrutiny
+kas/local-conf.yml              @dhirajsinhdeshmukh
+meta-physical-ai/recipes-core/  @dhirajsinhdeshmukh
+
+# Docker / CI
+Dockerfile                      @dhirajsinhdeshmukh
+kas-docker.sh                   @dhirajsinhdeshmukh
+.github/workflows/              @dhirajsinhdeshmukh

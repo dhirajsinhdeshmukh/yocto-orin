@@ -1,0 +1,99 @@
+name: Validate kas configs
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kas-project.yml'
+      - 'kas/**'
+      - 'meta-physical-ai/conf/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'kas-project.yml'
+      - 'kas/**'
+      - 'meta-physical-ai/conf/**'
+
+jobs:
+  validate-yaml:
+    name: YAML syntax
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate all kas YAML files
+        run: |
+          python3 -c "
+          import yaml, sys, glob
+          files = ['kas-project.yml'] + glob.glob('kas/*.yml')
+          ok = True
+          for f in files:
+              try:
+                  yaml.safe_load(open(f))
+                  print(f'  OK  {f}')
+              except yaml.YAMLError as e:
+                  print(f'  FAIL {f}: {e}', file=sys.stderr)
+                  ok = False
+          sys.exit(0 if ok else 1)
+          "
+
+  validate-kas:
+    name: kas config check
+    runs-on: ubuntu-22.04
+    needs: validate-yaml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install kas
+        run: pip install -r requirements.txt
+
+      - name: kas check (validates layer includes, no fetch)
+        run: kas check kas-project.yml
+        env:
+          # kas check will try to reach remotes — fail fast on network errors
+          KAS_CLONE_DEPTH: 1
+
+  validate-layer-conf:
+    name: layer.conf sanity
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check LAYERSERIES_COMPAT contains scarthgap
+        run: |
+          grep -r "LAYERSERIES_COMPAT" meta-physical-ai/conf/layer.conf | grep -q "scarthgap" \
+            && echo "OK: scarthgap declared in LAYERSERIES_COMPAT" \
+            || (echo "FAIL: scarthgap missing from LAYERSERIES_COMPAT" && exit 1)
+
+      - name: Check no branch-name refspecs in layers.yml
+        run: |
+          python3 - <<'EOF'
+          import yaml, sys
+          data = yaml.safe_load(open('kas/layers.yml'))
+          repos = data.get('repos', {})
+          fail = False
+          for name, cfg in repos.items():
+              if isinstance(cfg, dict):
+                  ref = cfg.get('refspec', '')
+                  # A branch name is short (no slashes) and less than 40 chars
+                  if ref and '/' not in ref and len(ref) != 40:
+                      print(f'WARN: {name} refspec "{ref}" looks like a branch name, not a SHA')
+                      fail = True
+                  elif ref and len(ref) == 40:
+                      print(f'  OK  {name}: {ref[:12]}...')
+          sys.exit(1 if fail else 0)
+          EOF
+
+      - name: Check keys are not committed
+        run: |
+          if git ls-files keys/ | grep -q '.'; then
+            echo "FAIL: signing keys detected in git index!"
+            git ls-files keys/
+            exit 1
+          else
+            echo "OK: keys/ not tracked"
+          fi

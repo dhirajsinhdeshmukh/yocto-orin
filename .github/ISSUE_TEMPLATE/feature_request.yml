@@ -1,0 +1,42 @@
+name: Feature / Package Request
+description: Request a new package, layer, recipe, or build feature
+title: "[FEAT] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Request type
+      options:
+        - Add package to Jetson rootfs image
+        - Add library/header to SDK sysroot
+        - Add new Yocto layer
+        - New custom recipe (meta-physical-ai)
+        - Build script feature
+        - Docker SDK change
+        - Security hardening improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What do you need?
+      description: Describe the feature. Include the use case on the Jetson.
+    validations:
+      required: true
+
+  - type: input
+    id: recipe-name
+    attributes:
+      label: Package / recipe name
+      description: OpenEmbedded recipe name if known (e.g. python3-numpy, meta-ros)
+      placeholder: e.g. opencv, nativesdk-cmake, meta-clang
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - Package is present in rootfs: `opkg list-installed | grep opencv`
+        - SDK sysroot contains headers: `$SDKTARGETSYSROOT/usr/include/opencv4`

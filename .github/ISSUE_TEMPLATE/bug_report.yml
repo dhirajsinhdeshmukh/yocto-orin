@@ -1,0 +1,69 @@
+name: Build or Flash Issue
+description: Report a problem with the Yocto build, layer resolution, or device flashing
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - kas config / layer resolution
+        - Yocto build failure (bitbake error)
+        - dm-verity / signing
+        - Flashing (tegra-flash / bmaptool)
+        - Docker SDK container
+        - build.sh script
+        - On-device runtime
+    validations:
+      required: true
+
+  - type: dropdown
+    id: board
+    attributes:
+      label: Target Board
+      options:
+        - Jetson Orin Nano DevKit (NVMe)
+        - Jetson Orin Nano Super DevKit (eMMC)
+        - Both / not hardware specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Describe the error, including the exact command you ran.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output / logs
+      description: Paste relevant bitbake error, terminal output, or dmesg. Truncate to the failure point.
+      render: shell
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ./build.sh --cores 4 --rootfs ro
+        2. Error appears at task do_compile for recipe X
+    validations:
+      required: true
+
+  - type: input
+    id: kas-version
+    attributes:
+      label: kas version
+      placeholder: kas --version
+    validations:
+      required: true
+
+  - type: input
+    id: host-os
+    attributes:
+      label: Host OS
+      placeholder: Ubuntu 22.04.x LTS

@@ -190,3 +190,250 @@ git ls-remote https://git.yoctoproject.org/meta-security refs/heads/scarthgap | 
 python3 -c "import yaml; yaml.safe_load(open('kas/layers.yml'))" && echo "OK"
 ./build.sh --rootfs rw --no-dm-verity  # test build
 ```
+
+---
+
+## Build & Debug Commands
+
+### Build an image
+
+```bash
+# Full production build (reads kas-project.yml + all kas/ includes)
+kas build kas-project.yml
+
+# Via build.sh wrapper (recommended — handles keys validation, logging)
+./build.sh --cores 8 --rootfs ro --dm-verity
+
+# Build a specific image without changing kas-project.yml
+kas build kas-project.yml --cmd "bitbake demo-image-full"
+
+# Dry-run: parse all recipes, show task graph, do NOT build anything
+kas build kas-project.yml --cmd "bitbake -n demo-image-base"
+
+# Open an interactive bitbake shell inside the kas environment
+kas shell kas-project.yml
+```
+
+### Build the SDK (cross-compile toolchain)
+
+```bash
+# Build the standalone SDK installer
+kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk"
+# Output: build/tmp/deploy/sdk/poky-glibc-x86_64-demo-image-base-aarch64-*.sh
+
+# Build the extensible SDK (includes devtool and full recipe metadata)
+kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk_ext"
+
+# Install the SDK locally
+./build/tmp/deploy/sdk/poky-glibc-x86_64-*.sh -d /opt/yocto-sdk -y
+
+# Activate the SDK environment (do this in every new shell)
+source /opt/yocto-sdk/environment-setup-aarch64-poky-linux
+
+# Verify cross-compiler
+$CC --version       # aarch64-poky-linux-gcc
+echo $SDKTARGETSYSROOT  # path to aarch64 sysroot
+```
+
+### Add a utility to the image
+
+```bash
+# 1. Find the recipe name
+kas shell kas-project.yml -c "bitbake -s | grep -i <name>"
+
+# 2. Add to kas/image-packages.yml
+#    IMAGE_INSTALL:append = " <recipe-name>"
+
+# 3. Rebuild only the image assembly (not the whole world)
+kas build kas-project.yml --cmd "bitbake demo-image-base"
+```
+
+### Remove a utility from the image
+
+```bash
+# Option A: Remove the package name from IMAGE_INSTALL in kas/image-packages.yml
+
+# Option B: Explicitly exclude a package that another recipe pulls in
+# Add to kas/image-packages.yml:
+#   IMAGE_INSTALL:remove = " <recipe-name>"
+#   PACKAGE_EXCLUDE = "<recipe-name>"
+
+# Rebuild image
+kas build kas-project.yml --cmd "bitbake demo-image-base"
+
+# Check what is installed in the final rootfs
+kas build kas-project.yml --cmd "bitbake demo-image-base -c rootfs"
+oe-pkgdata-util list-pkgs -p build/tmp/pkgdata/jetson-orin-nano-devkit-nvme/
+```
+
+### Add a library or tool to the SDK
+
+```bash
+# Host tool (runs in SDK shell on your build machine)
+# → Add to kas/sdk.yml: TOOLCHAIN_HOST_TASK:append = " nativesdk-cmake"
+
+# Target lib/header (cross-compiled for aarch64 sysroot)
+# → Add to kas/sdk.yml: TOOLCHAIN_TARGET_TASK:append = " opencv-dev"
+
+# Rebuild SDK after changes
+kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk"
+
+# List what is currently in the SDK sysroot
+ls /opt/yocto-sdk/sysroots/aarch64-poky-linux/usr/include/
+ls /opt/yocto-sdk/sysroots/x86_64-pokysdk-linux/usr/bin/   # host tools
+```
+
+### Remove a library from the SDK
+
+```bash
+# Remove the entry from TOOLCHAIN_TARGET_TASK or TOOLCHAIN_HOST_TASK in kas/sdk.yml
+# Then rebuild:
+kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk"
+```
+
+---
+
+## Debugging Build Failures
+
+### Locate the failing task log
+
+Bitbake prints the log path on failure. Navigate directly:
+
+```bash
+# After a build failure, bitbake prints:
+# ERROR: Logfile of failure stored in: build/tmp/work/<arch>/<recipe>/<ver>/temp/log.do_<task>
+
+# Or find recent failure logs
+find build/tmp/work -name "log.do_*" -newer build/tmp/work -type f | sort -t/ -k1 | tail -20
+
+# Read the failure log
+cat build/tmp/work/aarch64-poky-linux/my-recipe/1.0/temp/log.do_compile
+```
+
+### Re-run a single task
+
+```bash
+# Re-run a specific task for a recipe (e.g. recompile after a patch)
+kas build kas-project.yml --cmd "bitbake <recipe> -c compile"
+
+# Force re-run even if sstate says it's current
+kas build kas-project.yml --cmd "bitbake <recipe> -c compile -f"
+
+# Clean a recipe's build artifacts and start fresh
+kas build kas-project.yml --cmd "bitbake <recipe> -c clean"
+
+# Clean a recipe and all rdependants (full cascade)
+kas build kas-project.yml --cmd "bitbake <recipe> -c cleansstate"
+```
+
+### Inspect a recipe interactively
+
+```bash
+# Open a shell inside the recipe's build environment (with all env vars set)
+kas build kas-project.yml --cmd "bitbake <recipe> -c devshell"
+
+# List all tasks a recipe provides
+kas build kas-project.yml --cmd "bitbake <recipe> -c listtasks"
+
+# Dump all variable values as bitbake sees them for a recipe
+kas build kas-project.yml --cmd "bitbake -e <recipe> | grep -A5 '^IMAGE_INSTALL'"
+
+# Show what provides a virtual package
+kas build kas-project.yml --cmd "bitbake -e virtual/kernel | grep '^PN'"
+```
+
+### Layer and recipe discovery
+
+```bash
+# Show all loaded layers and their priorities
+kas shell kas-project.yml -c "bitbake-layers show-layers"
+
+# Show which layer a recipe comes from
+kas shell kas-project.yml -c "bitbake-layers show-recipes <recipe>"
+
+# Find all recipes matching a pattern
+kas shell kas-project.yml -c "bitbake -s | grep <pattern>"
+
+# Show full dependency tree for a recipe
+kas build kas-project.yml --cmd "bitbake -g demo-image-base && cat pn-depends.dot | grep <recipe>"
+
+# Show what pulls in a package (reverse dependency lookup)
+kas build kas-project.yml --cmd "bitbake-layers show-recipes -f <recipe>"
+```
+
+### Image rootfs inspection (without booting)
+
+```bash
+# Open an interactive shell inside the assembled rootfs (pseudo-mounted)
+kas build kas-project.yml --cmd "bitbake demo-image-base -c devshell"
+
+# List what packages ended up in the image
+kas build kas-project.yml --cmd \
+  "bitbake demo-image-base && cat build/tmp/deploy/images/*/demo-image-base*.manifest"
+
+# Check rootfs size breakdown
+du -sh build/tmp/work/*/demo-image-base/*/rootfs/usr/
+```
+
+### sstate cache debugging
+
+```bash
+# Check if sstate exists for a recipe+task hash
+kas build kas-project.yml --cmd "bitbake <recipe> -c cleansstate && bitbake <recipe>"
+
+# Show the task signature hash for a recipe
+kas build kas-project.yml --cmd "bitbake-diffsigs build/tmp/stamps/ <recipe>"
+
+# Find what changed between two builds (why cache missed)
+kas build kas-project.yml --cmd \
+  "bitbake-diffsigs build/tmp/sigdata.<old>.sigdata build/tmp/sigdata.<new>.sigdata"
+```
+
+### Common failure patterns
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `ERROR: Nothing PROVIDES '<x>'` | Missing layer or recipe name typo | Add the layer to `kas/layers.yml` |
+| `ERROR: <recipe> was skipped` | `COMPATIBLE_MACHINE` doesn't match | Wrong MACHINE or recipe needs layer dependency |
+| `do_fetch` fails with 404 | Upstream URL changed or refspec wrong | Update `SRC_URI` or `SRCREV` in recipe |
+| `do_compile` C/C++ error | Patch doesn't apply, or sysroot missing dep | Check `log.do_patch`, add missing `DEPENDS` |
+| `do_package_qa` failure | Bad file ownership / permissions in package | Fix `do_install` — use `install -m <mode>` |
+| `ERROR: Multiple .bb files are due to be built` | Two layers provide same recipe | Set `PREFERRED_PROVIDER` or adjust layer priority |
+| Whole build slower than expected | sstate miss after layer SHA update | Expected — sstate rebuilds; will be fast on next run |
+| `kas check` fails | YAML syntax error or missing include file | Run `python3 -c "import yaml; yaml.safe_load(open('kas-project.yml'))"` |
+
+---
+
+## General bitbake Options & Features
+
+```bash
+# Build with verbose output (shows each task as it runs)
+bitbake <recipe> -v
+
+# Show all warnings and notes (not just errors)
+bitbake <recipe> -D
+
+# Resume a failed build from where it stopped
+bitbake <recipe>           # just re-run — bitbake skips already-completed tasks
+
+# Limit parallel jobs (overrides BB_NUMBER_THREADS for one run)
+bitbake <recipe> -j 4
+
+# Build multiple targets at once
+bitbake demo-image-base my-app
+
+# Build all images defined in target:
+kas build kas-project.yml
+
+# Show the environment for the build (all variables)
+bitbake -e | grep "^IMAGE_FEATURES"
+
+# Show recipe metadata (SRC_URI, do_install, etc.)
+bitbake -e <recipe> | less
+
+# Fetch all sources without building (pre-populate DL_DIR)
+kas build kas-project.yml --cmd "bitbake --runall=fetch demo-image-base"
+
+# Parse all recipes and check for errors (no build)
+kas build kas-project.yml --cmd "bitbake --parse-only"
+```

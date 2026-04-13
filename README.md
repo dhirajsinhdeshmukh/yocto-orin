@@ -29,7 +29,8 @@ sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc g++ \
     build-essential chrpath socat cpio python3 python3-pip python3-pexpect \
     xz-utils debianutils iputils-ping libsdl1.2-dev xterm python3-git \
     python3-jinja2 python3-subunit python3-setuptools mesa-common-dev \
-    zstd liblz4-tool lz4 file locales ca-certificates
+    zstd liblz4-tool lz4 file locales ca-certificates \
+    device-tree-compiler usbutils
 ```
 
 ### Disk Space
@@ -287,30 +288,47 @@ lsusb | grep -i nvidia
 
 ### NVMe Flash (Primary)
 
-The build produces tegraflash artifacts in the deploy directory:
+Use the provided `flash.sh` wrapper. It handles host dependency installation,
+archive extraction into a clean `flash-artifacts/` directory, and invokes
+`doflash.sh` — all in one command.
+
+> **Important:** `doflash.sh` is packaged *inside* the `*.tegraflash.tar.gz`
+> archive produced by the build. Do **not** try to run it directly from
+> `build/tmp/deploy/images/…`; `flash.sh` extracts it correctly.
 
 ```bash
-cd build/tmp/deploy/images/jetson-orin-nano-devkit-nvme/
+# Put the Jetson in recovery mode first (see above), then:
+./flash.sh
 
-# Use the generated flash script (recommended)
-sudo ./doflash.sh
+# Extract only (no flash) — useful for inspection:
+./flash.sh --no-flash
 
-# Or use tegra-flash.py directly
-sudo ./tegra-flash.py \
-    --bl uefi_jetson_with_dtb.bin \
-    --cfg flash_t234_qspi.xml \
-    --chip 0x23 \
-    --applet mb1_t234_prod.bin \
-    --cmd "flash" \
-    --dev nvme0n1 \
-    --bct tegra234-mb1-bct-*.dts \
-    --dtb tegra234-p3768-0000+p3767-0005-nv.dtb \
-    --bldtb tegra234-p3768-0000+p3767-0005-nv.dtb \
-    --odmdata gbe-uphy-config-8,hsstp-lane-map-3 \
-    --overlay_dtb L4TConfiguration.dtbo,tegra234-p3768-0000+p3767-0005-dynamic.dtbo
+# Keep flash-artifacts/ after flashing:
+./flash.sh --no-cleanup
 ```
 
-> **Note:** Exact filenames vary by L4T/meta-tegra version. The `doflash.sh` script auto-selects the correct arguments. Always prefer it over manual `tegra-flash.py` invocation.
+`flash.sh` options:
+
+| Option | Default | Description |
+|---|---|---|
+| `--machine MACHINE` | `jetson-orin-nano-devkit-nvme` | Yocto MACHINE name |
+| `--image IMAGE` | `demo-image-base` | Image recipe name |
+| `--no-flash` | off | Extract only; skip `doflash.sh` |
+| `--no-cleanup` | off | Preserve `flash-artifacts/` after flash |
+| `--skip-deps` | off | Skip host dependency check |
+
+#### USB Device ID Reference
+
+Verify the Jetson USB state with `lsusb` before and after flashing:
+
+| USB ID | Meaning |
+|---|---|
+| `0955:7523` | APX (recovery mode) — **ready to flash** |
+| `0955:7020` | L4T running (normal boot) — put in recovery mode first |
+
+> **Note:** `flash.sh` warns but does not abort if the device is not in recovery
+> mode. The flash itself will fail with a "could not retrieve chip ID" error if
+> the board is not in APX mode.
 
 ### NVMe Partition Layout
 

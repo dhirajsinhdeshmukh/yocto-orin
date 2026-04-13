@@ -90,6 +90,7 @@ cython_debug/
 # --- Yocto / kas build artifacts ---
 downloads/
 sstate-cache/
+flash-artifacts/
 
 # Signing keys — NEVER commit
 keys/

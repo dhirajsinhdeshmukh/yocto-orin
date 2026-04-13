@@ -44,6 +44,13 @@ local_conf_header:
     EXTRA_IMAGE_FEATURES = ""
     IMAGE_FEATURES:append = " read-only-rootfs"
 
+  # --- Dev access: empty root password (REMOVE FOR PRODUCTION) ---
+  # Enables serial/SSH login as root with no password for development.
+  # Does NOT re-enable debug-tweaks (no passwordless sudo, no debug serial).
+  # Remove this block when building production images.
+  dev-access: |
+    IMAGE_FEATURES:append = " allow-empty-password allow-root-login"
+
   # --- Build tuning (defaults, overridden at runtime by build.sh) ---
   # build.sh --cores N will inject BB_NUMBER_THREADS/PARALLEL_MAKE overrides
   # via a kas merge config, superseding these defaults.

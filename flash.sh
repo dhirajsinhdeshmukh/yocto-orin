@@ -7,11 +7,9 @@
 # This script:
 #   1. Installs required host dependencies (device-tree-compiler, etc.)
 #   2. Locates the tegraflash tarball in the build deploy directory
-#   3. Removes any previously extracted files from the build deploy directory
-#      (keeps the directory clean; the tarball itself is preserved)
-#   4. Extracts the tarball into flash-artifacts/<MACHINE>/ (never into build/)
-#   5. Optionally verifies the Jetson is in USB recovery mode (0955:7523)
-#   6. Runs sudo ./doflash.sh from the extracted directory
+#   3. Extracts the tarball into flash-artifacts/<MACHINE>/ (never into build/)
+#   4. Optionally verifies the Jetson is in USB recovery mode (0955:7523)
+#   5. Runs sudo ./doflash.sh from the extracted directory
 #
 # Options:
 #   --machine MACHINE   Yocto MACHINE name (default: jetson-orin-nano-devkit-nvme)
@@ -116,34 +114,7 @@ fi
 info "Found tarball: ${TARBALL}"
 
 # ---------------------------------------------------------------------------
-# Step 3: Clean previously extracted files from the build deploy directory
-# ---------------------------------------------------------------------------
-step "Cleaning any previously extracted flash artifacts from ${DEPLOY_DIR}..."
-
-# List all members of the tarball and remove them from the deploy directory.
-# This undoes any manual extraction done during troubleshooting.
-tar -tzf "${TARBALL}" | while IFS= read -r entry; do
-    # Strip trailing slash (directories)
-    local_path="${DEPLOY_DIR}/${entry%/}"
-    if [[ -f "${local_path}" || -L "${local_path}" ]]; then
-        rm -f "${local_path}"
-    elif [[ -d "${local_path}" && "${entry}" == */ ]]; then
-        # Only remove empty directories to avoid accidentally removing build outputs
-        rmdir --ignore-fail-on-non-empty "${local_path}" 2>/dev/null || true
-    fi
-done
-
-# Also remove common residual files left by interactive troubleshooting
-for residual in cvm.bin cvm.bin.bak chip_info.bin chip_info.bin_bak; do
-    rm -f "${DEPLOY_DIR}/${residual}"
-done
-find "${DEPLOY_DIR}" -maxdepth 1 -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
-find "${DEPLOY_DIR}" -maxdepth 1 -name 'temp'        -type d -exec rm -rf {} + 2>/dev/null || true
-
-info "Build deploy directory is clean."
-
-# ---------------------------------------------------------------------------
-# Step 4: Extract tarball into flash-artifacts/
+# Step 3: Extract tarball into flash-artifacts/
 # ---------------------------------------------------------------------------
 ARTIFACTS_DIR="${SCRIPT_DIR}/flash-artifacts/${MACHINE}"
 step "Extracting flash artifacts to ${ARTIFACTS_DIR}..."
@@ -165,7 +136,7 @@ fi
 info "Extraction complete."
 
 # ---------------------------------------------------------------------------
-# Step 5: Verify recovery mode
+# Step 4: Verify recovery mode
 # ---------------------------------------------------------------------------
 step "Checking USB recovery mode..."
 
@@ -198,7 +169,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 6: Flash
+# Step 5: Flash
 # ---------------------------------------------------------------------------
 if [[ "${DO_FLASH}" == "no" ]]; then
     info "Skipping flash (--no-flash). Artifacts are in: ${ARTIFACTS_DIR}"

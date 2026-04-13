@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    // YAML (kas configs)
+    "redhat.vscode-yaml",
+    // Dockerfile
+    "ms-azuretools.vscode-docker",
+    // Python (kas is Python-based)
+    "ms-python.python"
+  ],
+  // Extensions that make no sense in this repo (huge indexers)
+  "unwantedRecommendations": [
+    "ms-vscode.cpptools-extension-pack"
+  ]
+}

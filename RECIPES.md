@@ -52,7 +52,40 @@ Edit [kas/layers.yml](kas/layers.yml). **Always pin to a commit SHA.**
 git ls-remote https://git.openembedded.org/meta-openembedded refs/heads/scarthgap | cut -f1
 ```
 
-### Step 2 — Add the repo block
+### Step 2 — Inspect the repo layout before choosing the layer key
+
+This is critical. Some repos (e.g. `meta-tegra`, `meta-security`) are **flat**: their
+`conf/layer.conf` lives at the repo root, so the correct kas layer key is `.`.
+Other repos (e.g. `meta-openembedded`) have **sublayer subdirectories** (`meta-oe/`,
+`meta-python/`, etc.).
+
+```bash
+# Quick check after cloning:
+ls <cloned-repo>/
+# If you see conf/ at the root → use .:  in the layers block
+# If you see meta-oe/ meta-python/ etc. → use the subdir name
+```
+
+**Flat repo (e.g. meta-tegra, meta-security):**
+```yaml
+meta-tegra:
+  url: "https://github.com/OE4T/meta-tegra.git"
+  refspec: <sha>
+  layers:
+    .:   # conf/layer.conf is at repo root
+```
+
+**Subdirectory repo (e.g. meta-openembedded):**
+```yaml
+meta-openembedded:
+  url: "https://git.openembedded.org/meta-openembedded"
+  refspec: <sha>
+  layers:
+    meta-oe:      # meta-openembedded/meta-oe/conf/layer.conf exists
+    meta-python:
+```
+
+### Step 3 — Add the repo block
 
 ```yaml
 # filepath: kas/layers.yml
@@ -69,7 +102,20 @@ repos:
       meta-multimedia:   # GStreamer plugins, media codecs
 ```
 
-### Step 3 — Update layer dependency in meta-physical-ai
+### Step 4 — Check transitive LAYERDEPENDS
+
+After adding a new layer, inspect its `conf/layer.conf` for `LAYERDEPENDS`:
+
+```bash
+grep LAYERDEPENDS <cloned-repo>/conf/layer.conf
+# Example: LAYERDEPENDS_security = "core openembedded-layer"
+```
+
+Every dependency listed there must also be present in `kas/layers.yml`. For example,
+`meta-security` depends on `openembedded-layer` — so `meta-openembedded` with `meta-oe` must
+also be in `kas/layers.yml`.
+
+### Step 5 — Update layer dependency in meta-physical-ai
 
 If your recipes in `meta-physical-ai` use anything from the new layer:
 
@@ -79,7 +125,7 @@ LAYERDEPENDS_physical-ai = "core tegra openembedded-layer"
 #                                         ^^ collection name from new layer.conf
 ```
 
-### Step 4 — Validate
+### Step 6 — Validate
 
 ```bash
 python3 -c "import yaml; yaml.safe_load(open('kas/layers.yml'))" && echo "YAML OK"
@@ -614,6 +660,9 @@ sdk-host: |
 | `FILESEXTRAPATHS` | `FILESEXTRAPATHS:prepend := "${THISDIR}/files:"` | Extra search paths for SRC_URI file:// |
 | `SYSTEMD_SERVICE:${PN}` | `SYSTEMD_SERVICE:${PN} = "foo.service"` | systemd unit name |
 | `COMPATIBLE_MACHINE` | `COMPATIBLE_MACHINE = "jetson.*"` | Restrict recipe to specific machines |
+
+> **SDK package naming:** When adding packages to `kas/sdk.yml`, use Yocto names, not Debian names:
+> `openssl-dev` not `libssl-dev` · `curl-dev` not `libcurl-dev` · `zlib-dev` not `zlib1g-dev`
 
 **Scarthgap operator rules (`:` not `_`):**
 ```bitbake

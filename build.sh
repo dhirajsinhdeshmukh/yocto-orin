@@ -20,6 +20,13 @@ set -euo pipefail
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Auto-activate the project venv if kas isn't already on PATH
+if ! command -v kas >/dev/null 2>&1 && [[ -f "${SCRIPT_DIR}/.venv/bin/activate" ]]; then
+    # shellcheck source=/dev/null
+    source "${SCRIPT_DIR}/.venv/bin/activate"
+fi
+
 KAS_BASE="${SCRIPT_DIR}/kas-project.yml"
 CORES=""
 CPU_AFFINITY=""
@@ -90,7 +97,10 @@ fi
 info "Build parallelism: ${CORES} threads (of ${TOTAL_CORES} available)"
 
 # ── Generate kas override YAML ───────────────────────────────────────────────
-OVERRIDE_FILE=$(mktemp /tmp/kas-override-XXXXXX.yml)
+# kas 5.2+ requires all concatenated configs to live in the same repo.
+# Write the override under SCRIPT_DIR/tmp/ which is gitignored.
+mkdir -p "${SCRIPT_DIR}/tmp"
+OVERRIDE_FILE=$(mktemp "${SCRIPT_DIR}/tmp/kas-override-XXXXXX.yml")
 trap 'rm -f "$OVERRIDE_FILE"' EXIT
 
 cat > "$OVERRIDE_FILE" <<YAML
@@ -98,9 +108,6 @@ cat > "$OVERRIDE_FILE" <<YAML
 # DO NOT EDIT — this file is regenerated on every build invocation.
 header:
   version: 14
-  includes:
-    - repo: meta-physical-ai
-      file: ../kas-project.yml
 
 local_conf_header:
   build-sh-cores: |

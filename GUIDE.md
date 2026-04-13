@@ -7,7 +7,7 @@ Quick reference for navigating the repo, adding things, and flashing the board.
 ## File Map
 
 ```
-kas-project.yml                  ENTRY POINT — machine, distro, target, includes
+kas-project.yml                  ENTRY POINT — machine: jetson-orin-nano-devkit-nvme, distro: poky
 kas/
 ├── layers.yml                   → ADD NEW YOCTO LAYERS HERE
 ├── local-conf.yml               → dm-verity keys, cache paths, build tuning
@@ -16,13 +16,16 @@ kas/
 
 meta-physical-ai/                CUSTOM LAYER — our own recipes
 ├── conf/layer.conf              → layer registration, dependencies
+├── recipes-core/images/         → demo-image-base.bb (top-level image target)
 ├── recipes-core/systemd/        → read-only rootfs systemd drop-in
 └── recipes-core/overlayfs-setup → tmpfs-backed writable overlay (field debug)
 
 build.sh                         BUILD ORCHESTRATOR — cores, rootfs mode, dm-verity
+                                 Auto-activates .venv; writes override to tmp/ (not /tmp)
 kas-docker.sh                    SDK DOCKER — builds + pushes drdeshmukh97/yocto-orin
 Dockerfile                       Multi-stage: full Yocto builder → slim SDK image
 keys/dm-verity/                  RSA-3K signing keys — NOT in git, generate locally
+tmp/                             Ephemeral kas override YAMLs — gitignored
 ```
 
 ---
@@ -50,9 +53,15 @@ meta-openembedded:
   url: "https://git.openembedded.org/meta-openembedded"
   refspec: <sha>    # git ls-remote <url> refs/heads/scarthgap | cut -f1
   layers:
-    meta-oe:
+    meta-oe:        # subdirectory inside the repo
     meta-python:
 ```
+
+> **Layer path convention:** Some repos (e.g. `meta-tegra`, `meta-security`) have their
+> `conf/layer.conf` at the repo root — use `.` as the layer key, not the repo name.
+> `meta-openembedded` is different: each sublayer lives in its own subdirectory (`meta-oe/`,
+> `meta-python/`, etc.), so the subdirectory name is the correct key.
+> When in doubt: `ls <cloned-repo>/` and look for subdirs containing `conf/layer.conf`.
 
 ### Change the target machine
 Edit [kas-project.yml](kas-project.yml):
@@ -60,6 +69,8 @@ Edit [kas-project.yml](kas-project.yml):
 machine: jetson-orin-nano-devkit-nvme    # NVMe boot (default)
 # machine: jetson-orin-nano-devkit       # eMMC / Orin Nano Super devkit
 ```
+
+> `distro` is always `poky`. `meta-tegra` provides the MACHINE definitions only.
 
 ---
 
@@ -184,6 +195,7 @@ docker run --rm -v $(pwd)/my-app:/work drdeshmukh97/yocto-orin:stable \
 # Get fresh scarthgap HEADs
 git ls-remote https://git.yoctoproject.org/poky refs/heads/scarthgap | cut -f1
 git ls-remote https://github.com/OE4T/meta-tegra.git refs/heads/scarthgap | cut -f1
+git ls-remote https://git.openembedded.org/meta-openembedded refs/heads/scarthgap | cut -f1
 git ls-remote https://git.yoctoproject.org/meta-security refs/heads/scarthgap | cut -f1
 
 # Update refspec values in kas/layers.yml, then validate
@@ -401,6 +413,8 @@ kas build kas-project.yml --cmd \
 | `ERROR: Multiple .bb files are due to be built` | Two layers provide same recipe | Set `PREFERRED_PROVIDER` or adjust layer priority |
 | Whole build slower than expected | sstate miss after layer SHA update | Expected — sstate rebuilds; will be fast on next run |
 | `kas check` fails | YAML syntax error or missing include file | Run `python3 -c "import yaml; yaml.safe_load(open('kas-project.yml'))"` |
+| `All concatenated config files must belong to the same repository` | kas 5.2+ override file written to system `/tmp` | `build.sh` now writes to `${SCRIPT_DIR}/tmp/` instead |
+| Layer directory does not exist error | Layer key in `kas/layers.yml` names a non-existent subdir | Use `.` for flat repos (meta-tegra, meta-security); use subdir name for meta-openembedded etc. |
 
 ---
 

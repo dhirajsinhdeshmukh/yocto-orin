@@ -11,7 +11,11 @@ You are helping add a package to either the Jetson rootfs image or the cross-com
 ## Rules
 - The leading space inside the quoted string is **required** by bitbake's append operator.
 - Package names follow OpenEmbedded conventions (lowercase, hyphen-separated).
-  Examples: `htop`, `python3-numpy`, `libssl-dev`, `nativesdk-cmake`
+  Use **Yocto names, not Debian names**:
+  - `openssl-dev` not `libssl-dev`
+  - `curl-dev` not `libcurl-dev`
+  - `zlib-dev` not `zlib1g-dev`
+  - `nativesdk-cmake`, `nativesdk-python3` for SDK host tools
 - For packages from extra layers (meta-oe, etc.), the layer must first be added
   to `kas/layers.yml` — prompt the user if that's missing.
 - Never add debug packages (`gdb`, `valgrind`, `strace`) to the production

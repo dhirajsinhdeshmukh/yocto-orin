@@ -22,6 +22,6 @@ header:
     - kas/sdk.yml
 
 machine: jetson-orin-nano-devkit-nvme
-distro: tegra
+distro: poky
 target:
   - demo-image-base

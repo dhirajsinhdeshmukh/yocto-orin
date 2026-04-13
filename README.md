@@ -11,6 +11,7 @@ Production-grade Yocto BSP for the **NVIDIA Jetson Orin Nano** targeting NVMe bo
 |---|---|---|
 | Poky (OE-Core) | scarthgap (5.0) | `8643f911` |
 | meta-tegra (BSP) | scarthgap | `891fc9e6` |
+| meta-openembedded | scarthgap | `1ad0d777` |
 | meta-security | scarthgap | `b13f1705` |
 | meta-physical-ai | local | — |
 
@@ -38,8 +39,12 @@ Minimum **100 GB** free. A full build with SDK generation requires ~150 GB.
 ### Install kas
 
 ```bash
-pip3 install kas
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
+
+`build.sh` activates `.venv` automatically when `kas` is not already on `PATH`.
 
 Verify:
 
@@ -101,7 +106,10 @@ Options:
   -h, --help               Show help
 ```
 
-The script generates a temporary kas override YAML merged with `kas-project.yml` at build time. The override is deleted on exit.
+The script generates a temporary kas override YAML inside `${SCRIPT_DIR}/tmp/` (gitignored),
+merged with `kas-project.yml` at build time via kas file concatenation (`:`). The override file
+is deleted on exit. kas 5.2+ requires both files to live inside the same git repo—this is why
+the override is written under the repo tree, not to system `/tmp`.
 
 ### Rootfs Modes
 
@@ -393,6 +401,8 @@ yocto_orin/
 │   ├── conf/
 │   │   └── layer.conf
 │   ├── recipes-core/
+│   │   ├── images/
+│   │   │   └── demo-image-base.bb          ← top-level image target
 │   │   ├── systemd/
 │   │   │   └── systemd-conf/
 │   │   │       ├── systemd-conf_%.bbappend
@@ -404,6 +414,7 @@ yocto_orin/
 │   │       └── files/
 │   │           └── overlayfs-rootfs.service
 │   └── COPYING.MIT
+├── tmp/                                # ⛔ NOT in git (kas override YAMLs)
 ├── downloads/                          # ⛔ NOT in git (DL_DIR)
 ├── sstate-cache/                       # ⛔ NOT in git (SSTATE_DIR)
 └── build/                              # ⛔ NOT in git (TMPDIR)
@@ -433,9 +444,10 @@ To update to latest scarthgap HEAD:
 # Get current HEAD SHAs
 git ls-remote https://git.yoctoproject.org/poky refs/heads/scarthgap | cut -f1
 git ls-remote https://github.com/OE4T/meta-tegra.git refs/heads/scarthgap | cut -f1
+git ls-remote https://git.openembedded.org/meta-openembedded refs/heads/scarthgap | cut -f1
 git ls-remote https://git.yoctoproject.org/meta-security refs/heads/scarthgap | cut -f1
 
-# Update refspec values in kas-project.yml, then rebuild
+# Update refspec values in kas/layers.yml, then rebuild
 ./build.sh
 ```
 

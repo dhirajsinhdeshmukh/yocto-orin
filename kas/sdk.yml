@@ -39,8 +39,8 @@ local_conf_header:
   # --- SDK target sysroot (aarch64 headers + libs for cross-compilation) ---
   sdk-target: |
     TOOLCHAIN_TARGET_TASK:append = " \
-        libssl-dev \
-        libcurl-dev \
+        openssl-dev \
+        curl-dev \
         zlib-dev \
     "
     # Add headers/libs your application needs to link against:

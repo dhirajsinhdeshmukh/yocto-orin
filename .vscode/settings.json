@@ -1,0 +1,71 @@
+{
+  // ─── File Watcher ────────────────────────────────────────────────────────────
+  // Stop VS Code from watching the massive Yocto build artefacts.
+  // Everything outside this list is still watched normally.
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    // Yocto build tree (tmp/, work/, stamps/, log/, deploy/, …)
+    "**/build/**": true,
+    // Fetched source tarballs — can be 50 GB+
+    "**/downloads/**": true,
+    // Shared-state cache
+    "**/sstate-cache/**": true,
+    // Python venv in the repo root
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    // Temporary kas override YAMLs (written here to satisfy kas 5.2 same-repo rule)
+    "**/tmp/**": true
+  },
+
+  // ─── Explorer / File Tree ────────────────────────────────────────────────────
+  // Hide generated & vendor directories from the sidebar.
+  "files.exclude": {
+    "**/.git": true,
+    "**/__pycache__": true,
+    "**/.venv": true,
+    "**/build": false,
+    "**/downloads": false,
+    "**/sstate-cache": false,
+    "**/tmp": true
+  },
+
+  // ─── Search ──────────────────────────────────────────────────────────────────
+  // Keep Ctrl+Shift+F fast by never searching build artefacts.
+  "search.exclude": {
+    "**/build": false,
+    "**/downloads": false,
+    "**/sstate-cache": false,
+    "**/.venv": true,
+    "**/__pycache__": true,
+    "**/*.egg-info": true,
+    "**/tmp": true
+  },
+
+  // ─── BitBake / Yocto File Associations ───────────────────────────────────────
+  "files.associations": {
+    "*.bb": "bitbake",
+    "*.bbappend": "bitbake",
+    "*.bbclass": "bitbake",
+    "*.inc": "bitbake",
+    "*.conf": "bitbake",
+    "layer.conf": "bitbake",
+    "kas-project.yml": "yaml",
+    "kas/*.yml": "yaml"
+  },
+
+  // ─── Editor tweaks for recipe files ──────────────────────────────────────────
+  "[bitbake]": {
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.rulers": [100]
+  },
+  "[yaml]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "[shellscript]": {
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  }
+}

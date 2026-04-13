@@ -94,14 +94,17 @@ sstate-cache/
 # Signing keys — NEVER commit
 keys/
 
-# Temporary kas override configs
-/tmp/kas-override-*.yml
+# Temporary kas override configs (written here so kas sees them in-repo)
+/tmp/
 
 # --- Editor / IDE ---
 *.swp
 *.swo
 *~
-.vscode/
+# Track shared VS Code config; ignore personal/generated files
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 
 # --- Docker build context excludes (see .dockerignore) ---

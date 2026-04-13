@@ -29,7 +29,17 @@ repos:
     url: "https://github.com/OE4T/meta-tegra.git"
     refspec: 891fc9e6d89da207a5496d9d611cf1d8982c1f45
     layers:
-      meta-tegra:
+      .:
+
+  # ---------------------------------------------------------------------------
+  # meta-openembedded — meta-oe required by meta-security (openembedded-layer)
+  # scarthgap @ 2026-04-12
+  # ---------------------------------------------------------------------------
+  meta-openembedded:
+    url: "https://git.openembedded.org/meta-openembedded"
+    refspec: 1ad0d777d1de1769e5995eb806f7ae5c15d0be54
+    layers:
+      meta-oe:
 
   # ---------------------------------------------------------------------------
   # meta-security — dm-verity, IMA, TPM, AppArmor support
@@ -39,7 +49,7 @@ repos:
     url: "https://git.yoctoproject.org/meta-security"
     refspec: b13f1705d723650de61277670c8a76aadea4cfdd
     layers:
-      meta-security:
+      .:
 
   # ---------------------------------------------------------------------------
   # meta-physical-ai — local custom layer (read-only rootfs, overlayfs)

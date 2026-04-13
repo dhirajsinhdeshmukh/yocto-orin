@@ -20,6 +20,9 @@
 - [ ] `kas shell kas-project.yml -c "bitbake-layers show-layers"` succeeds
 - [ ] `LAYERSERIES_COMPAT` includes `scarthgap` in any new `layer.conf`
 - [ ] New recipes use `:` variable operators (`FILES:${PN}`, `RDEPENDS:${PN}`)
+- [ ] Layer paths in `kas/layers.yml` use `.` when the layer sits at the repo root (not named subdir)
+- [ ] Any new layer's `LAYERDEPENDS` are satisfied by existing entries in `kas/layers.yml`
+- [ ] SDK package names use Yocto naming (`openssl-dev`, `curl-dev`, not `libssl-dev`, `libcurl-dev`)
 
 ### Security Changes
 - [ ] `debug-tweaks` is NOT re-added

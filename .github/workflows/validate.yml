@@ -6,12 +6,16 @@ on:
       - 'kas-project.yml'
       - 'kas/**'
       - 'meta-physical-ai/conf/**'
+      - 'meta-physical-ai/recipes-core/images/**'
+      - 'build.sh'
   pull_request:
     branches: [main]
     paths:
       - 'kas-project.yml'
       - 'kas/**'
       - 'meta-physical-ai/conf/**'
+      - 'meta-physical-ai/recipes-core/images/**'
+      - 'build.sh'
 
 jobs:
   validate-yaml:
@@ -77,15 +81,38 @@ jobs:
           repos = data.get('repos', {})
           fail = False
           for name, cfg in repos.items():
-              if isinstance(cfg, dict):
+              if isinstance(cfg, dict) and 'path' not in cfg:  # skip local path repos
                   ref = cfg.get('refspec', '')
-                  # A branch name is short (no slashes) and less than 40 chars
-                  if ref and '/' not in ref and len(ref) != 40:
-                      print(f'WARN: {name} refspec "{ref}" looks like a branch name, not a SHA')
-                      fail = True
-                  elif ref and len(ref) == 40:
+                  # A 40-char hex string is a commit SHA
+                  if ref and len(ref) == 40 and all(c in '0123456789abcdef' for c in ref):
                       print(f'  OK  {name}: {ref[:12]}...')
+                  elif ref:
+                      print(f'WARN: {name} refspec "{ref}" looks like a branch/tag, not a SHA')
+                      fail = True
           sys.exit(1 if fail else 0)
+          EOF
+
+      - name: Check layer paths use dot-notation for flat repos
+        run: |
+          python3 - <<'EOF'
+          import yaml, os, sys
+          # Warn if a layer key matches the repo name exactly AND no such subdir exists
+          # (common mistake: meta-tegra: instead of .:)
+          data = yaml.safe_load(open('kas/layers.yml'))
+          for repo_name, cfg in data.get('repos', {}).items():
+              if not isinstance(cfg, dict):
+                  continue
+              base = cfg.get('path', repo_name)
+              layers = cfg.get('layers', {})
+              if not layers:
+                  continue
+              for layer_key in layers:
+                  if layer_key in ('.', ''):
+                      continue
+                  candidate = os.path.join(base, layer_key)
+                  if not os.path.isdir(candidate):
+                      print(f'WARN: {repo_name}: layer key "{layer_key}" but directory "{candidate}" does not exist')
+                      print(f'      Consider using "." if the layer is at the repo root')
           EOF
 
       - name: Check keys are not committed

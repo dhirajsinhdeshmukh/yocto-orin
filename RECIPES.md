@@ -237,7 +237,7 @@ inherit cmake
 EXTRA_OECMAKE = "-DBUILD_TESTS=OFF -DENABLE_CUDA=ON"
 
 # --- Runtime dependencies (installed on Jetson) ---
-RDEPENDS:${PN} = "python3 libssl"
+RDEPENDS:${PN} = "python3 openssl"
 
 # --- Install ---
 do_install:append() {

@@ -104,7 +104,7 @@ Edit `kas/layers.yml`:
 repos:
   meta-rauc:
     url: "https://github.com/rauc/meta-rauc.git"
-    refspec: "2024.04"   # pin to a release tag or commit SHA
+    refspec: "<commit-sha>"  # always pin to a commit SHA — never a branch or tag
     layers:
       .:
 
@@ -115,7 +115,8 @@ repos:
       meta-rauc-tegra:       # Tegra-specific RAUC bootloader integration
 ```
 
-> Always pin to a specific commit SHA or release tag — never a branch name.
+> Always pin to a specific commit SHA — never a branch name or release tag.
+> Get the SHA with: `git ls-remote <url> refs/heads/scarthgap | cut -f1`
 > Verify the subdirectory name with `ls <cloned-repo>/` before committing.
 
 ### 4.2 Create a RAUC system configuration recipe
@@ -125,8 +126,8 @@ Create `meta-physical-ai/recipes-core/rauc/rauc-system.conf`:
 ```ini
 [system]
 compatible=jetson-orin-nano-orin
-bootloader=uboot
-statusfile=/var/lib/rauc/system.conf
+bootloader=efi
+statusfile=/var/lib/rauc/status
 
 [keyring]
 path=/etc/rauc/ca.cert.pem
@@ -252,7 +253,7 @@ VERSION=1.2.0
 mkdir -p bundles
 
 # Copy rootfs image
-cp "${DEPLOY}/demo-image-base-jetson-orin-nano-devkit-nvme.ext4" \
+cp "${DEPLOY}/demo-image-base-jetson-orin-nano-devkit-nvme.rootfs.ext4" \
    bundle-work/rootfs.ext4
 
 # Write manifest
@@ -359,7 +360,7 @@ dm-verity, the update agent must:
 
 RAUC's `format=verity` bundle format automates steps 2-4. It uses `veritysetup`
 internally to compute and store the hash tree, and writes the root hash to UEFI
-U-Boot/UEFI environment variables.
+environment variables.
 
 On next boot, dm-verity is initialized from the stored root hash. If verification
 fails (corrupted rootfs), the kernel will panic and the bootloader will retry or

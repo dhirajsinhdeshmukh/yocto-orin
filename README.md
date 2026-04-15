@@ -386,9 +386,9 @@ host (for example, a card or other block device in an external reader). It does
 # Install bmaptool
 sudo apt-get install -y bmap-tools
 
-# Write image to removable media on the host
+# Write rootfs WIC image to removable media on the host
 sudo bmaptool copy \
-    demo-image-base-jetson-orin-nano-devkit.tegraflash.tar.gz \
+    demo-image-base-jetson-orin-nano-devkit.wic.zst \
     /dev/sdX
 
 # Or with explicit bmap file for sparse write (faster)

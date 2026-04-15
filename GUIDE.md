@@ -191,7 +191,7 @@ sudo bmaptool copy \
 > only writes the rootfs — safe for re-flashing the OS without touching the bootchain.
 
 
-### Step 5 — Verify on Device
+### Step 4 — Verify on Device
 
 ```bash
 # Root filesystem is read-only
@@ -208,7 +208,7 @@ systemctl show -.mount | grep Options
 # Options=ro
 ```
 
-### Step 6 — Post-Deploy Networking (Writable Bring-Up)
+### Step 5 — Post-Deploy Networking (Writable Bring-Up)
 
 For first boot and manual Wi-Fi / SSH setup, use a writable image:
 
@@ -300,7 +300,7 @@ kas build kas-project.yml
 ./build.sh --machine jetson-orin-nano-devkit --rootfs rw --no-dm-verity
 
 # Build a specific image target
-kas build --target demo-image-full kas-project.yml
+kas build --target demo-image-base kas-project.yml
 
 # Build the SDK installer
 kas build --target demo-image-base -c populate_sdk kas-project.yml

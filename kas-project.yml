@@ -11,7 +11,7 @@
 #
 # Build:          kas build kas-project.yml
 # Shell:          kas shell kas-project.yml -c "bitbake-layers show-layers"
-# Override merge: kas build kas-project.yml:/tmp/kas-override.yml
+# Override merge: kas build kas-project.yml:tmp/kas-override.yml
 # =============================================================================
 header:
   version: 14

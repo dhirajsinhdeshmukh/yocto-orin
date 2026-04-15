@@ -5,7 +5,7 @@
 #
 #   1. PRE-BUILT SDK (fast, recommended):
 #      Build the SDK locally first:
-#        ./build.sh --target demo-image-base -- --cmd "bitbake demo-image-base -c populate_sdk"
+#        ./build.sh -- --target demo-image-base -c populate_sdk
 #      Then build the Docker image:
 #        docker build --build-arg SDK_INSTALLER=build/tmp/deploy/sdk/poky-*.sh -t drdeshmukh97/yocto-orin:head .
 #
@@ -61,7 +61,7 @@ RUN mkdir -p keys/dm-verity \
 
 # Build the image + SDK
 RUN kas build kas-project.yml \
-    && kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk"
+    && kas build --target demo-image-base -c populate_sdk kas-project.yml
 
 # ---------------------------------------------------------------------------
 # Stage 2: sdk — slim runtime image containing only the cross-compilation SDK

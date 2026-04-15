@@ -21,5 +21,4 @@ IMAGE_INSTALL += " \
     tegra-nvpmodel \
     util-linux \
     procps \
-    e2fsprogs-resize2fs \
 "

@@ -30,7 +30,7 @@ sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc g++ \
     xz-utils debianutils iputils-ping libsdl1.2-dev xterm python3-git \
     python3-jinja2 python3-subunit python3-setuptools mesa-common-dev \
     zstd liblz4-tool lz4 file locales ca-certificates \
-    device-tree-compiler usbutils
+    device-tree-compiler usbutils udisks2
 ```
 
 ### Disk Space
@@ -64,14 +64,14 @@ Keys **must** exist before the build. See [DM-Verity Signing](#dm-verity-signing
 ### 2. Build
 
 ```bash
+# Bring-up build — writable rootfs, persistent post-deploy config
+./build.sh --rootfs rw --no-dm-verity
+
 # Production build — read-only rootfs, dm-verity enabled, 80% of cores
 ./build.sh
 
-# Explicit options
-./build.sh --cores 8 --rootfs ro --dm-verity
-
-# Development build — writable rootfs, no dm-verity
-./build.sh --rootfs rw --no-dm-verity
+# Explicit machine override
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity
 
 # OverlayFS mode — read-only root + volatile writable tmpfs layer
 ./build.sh --rootfs overlayfs --dm-verity
@@ -95,16 +95,25 @@ See [Flashing](#flashing) below.
 ## Build Script Reference
 
 ```
-./build.sh [OPTIONS] [-- EXTRA_KAS_ARGS]
+./build.sh [OPTIONS] [-- KAS_BUILD_ARGS [-- BITBAKE_ARGS]]
 
 Options:
   -c, --cores N            BB_NUMBER_THREADS + PARALLEL_MAKE (default: 80% of nproc)
   -a, --cpu-affinity MASK  taskset CPU mask (e.g., 0-7 or 0,2,4,6)
+  -m, --machine MACHINE    Override Yocto MACHINE (default: from kas-project.yml)
   -r, --rootfs MODE        ro | rw | overlayfs  (default: ro)
   -d, --dm-verity          Enable dm-verity signing (default)
       --no-dm-verity       Disable dm-verity
   -t, --target IMAGE       Override bitbake target
   -h, --help               Show help
+```
+
+Pass extra `kas build` arguments after the first `--`, and raw BitBake arguments
+after a second `--`, for example:
+
+```bash
+./build.sh -- --target demo-image-base -c populate_sdk
+./build.sh -- --target demo-image-base -c rootfs -- -f
 ```
 
 The script generates a temporary kas override YAML inside `${SCRIPT_DIR}/tmp/` (gitignored),
@@ -202,7 +211,7 @@ Build the SDK locally first, then package it:
 
 ```bash
 # 1. Build SDK
-./build.sh --target demo-image-base -- --cmd "bitbake demo-image-base -c populate_sdk"
+./build.sh -- --target demo-image-base -c populate_sdk
 
 # 2. Find the installer
 ls build/tmp/deploy/sdk/*.sh
@@ -271,7 +280,11 @@ The SDK includes:
 
 - USB-C cable connected to the Jetson Orin Nano's **USB recovery port**
 - NVIDIA L4T BSP tools (installed by meta-tegra into the deploy directory)
+- Host support for USB storage handoff (`udisksctl`, provided by `udisks2`)
 - Device in **recovery mode**
+
+This repo targets **Jetson Orin** developer kits only. Legacy Jetson Nano / T210
+hardware requires a different BSP and is out of scope here.
 
 ### Enter Recovery Mode
 
@@ -291,6 +304,10 @@ lsusb | grep -i nvidia
 Use the provided `flash.sh` wrapper. It handles host dependency installation,
 archive extraction into a clean `flash-artifacts/` directory, and invokes
 `doflash.sh` — all in one command.
+
+For the NVMe target, `doflash.sh` uses the initrd flash flow. The Jetson will
+reboot during deployment by design: it first boots via RCM, then comes back as
+USB storage so the host can write the NVMe and QSPI partitions.
 
 > **Important:** `doflash.sh` is packaged *inside* the `*.tegraflash.tar.gz`
 > archive produced by the build. Do **not** try to run it directly from
@@ -313,6 +330,9 @@ archive extraction into a clean `flash-artifacts/` directory, and invokes
 |---|---|---|
 | `--machine MACHINE` | `jetson-orin-nano-devkit-nvme` | Yocto MACHINE name |
 | `--image IMAGE` | `demo-image-base` | Image recipe name |
+| `--usb-instance N` | auto | Forward `--usb-instance` to `doflash.sh` |
+| `--erase-nvme` | off | Erase the NVMe drive during initrd flash |
+| `--force` | off | Continue if recovery mode is not detected |
 | `--no-flash` | off | Extract only; skip `doflash.sh` |
 | `--no-cleanup` | off | Preserve `flash-artifacts/` after flash |
 | `--skip-deps` | off | Skip host dependency check |
@@ -326,9 +346,10 @@ Verify the Jetson USB state with `lsusb` before and after flashing:
 | `0955:7523` | APX (recovery mode) — **ready to flash** |
 | `0955:7020` | L4T running (normal boot) — put in recovery mode first |
 
-> **Note:** `flash.sh` warns but does not abort if the device is not in recovery
-> mode. The flash itself will fail with a "could not retrieve chip ID" error if
-> the board is not in APX mode.
+> **Note:** `flash.sh` aborts if no recovery-mode device is detected, unless you
+> pass `--force`. If the flash fails after extraction, the script preserves the
+> `flash-artifacts/` directory and any `log.initrd-flash.*` or `device-logs-*`
+> output for debugging.
 
 ### NVMe Partition Layout
 
@@ -340,15 +361,16 @@ The flash process creates:
 | APP | nvme0n1p1 | Root filesystem (ext4 + dm-verity) |
 | APP_b | nvme0n1p2 | A/B rootfs slot (if configured) |
 
-### eMMC Flash (Fallback)
+### Non-NVMe Devkit Flash (Fallback)
 
-For boards without NVMe or for recovery scenarios. Requires the `jetson-orin-nano-devkit` MACHINE (not `-nvme` variant).
+Use the `jetson-orin-nano-devkit` MACHINE for the non-NVMe Orin devkit layout.
+This remains an Orin target; it is **not** a legacy Jetson Nano BSP.
 
 #### Using tegra-flash (recommended)
 
 ```bash
-# Rebuild with eMMC machine target
-./build.sh --target demo-image-base -t jetson-orin-nano-devkit
+# Rebuild for the non-NVMe devkit path
+./build.sh --machine jetson-orin-nano-devkit --rootfs rw --no-dm-verity
 
 cd build/tmp/deploy/images/jetson-orin-nano-devkit/
 sudo ./doflash.sh
@@ -356,22 +378,24 @@ sudo ./doflash.sh
 
 #### Using bmaptool (raw image write)
 
-`bmaptool` is useful for writing pre-built images to removable storage (SD/eMMC via external reader). It does **not** flash the QSPI bootloader — only the rootfs partition.
+`bmaptool` is useful for writing pre-built images to removable storage from the
+host (for example, a card or other block device in an external reader). It does
+**not** flash the QSPI bootloader — only the rootfs partition.
 
 ```bash
 # Install bmaptool
 sudo apt-get install -y bmap-tools
 
-# Write image to eMMC (via USB card reader or direct block device)
+# Write image to removable media on the host
 sudo bmaptool copy \
     demo-image-base-jetson-orin-nano-devkit.tegraflash.tar.gz \
-    /dev/mmcblk0
+    /dev/sdX
 
 # Or with explicit bmap file for sparse write (faster)
 sudo bmaptool copy \
     --bmap demo-image-base-jetson-orin-nano-devkit.wic.bmap \
     demo-image-base-jetson-orin-nano-devkit.wic.zst \
-    /dev/mmcblk0
+    /dev/sdX
 ```
 
 > **Warning:** `bmaptool` writes only the rootfs. The QSPI firmware must be flashed separately via `tegra-flash.py` at least once. For initial board bring-up, always use the full tegra-flash flow.
@@ -398,6 +422,52 @@ systemctl show -.mount | grep Options
 mount | grep overlay
 # overlay on /overlay/merged type overlay (rw,lowerdir=/,upperdir=/overlay/upper,...)
 ```
+
+### Post-Deploy Networking
+
+For first boot and manual SSH or Wi-Fi setup, use a writable bring-up image:
+
+```bash
+./build.sh --rootfs rw --no-dm-verity
+./flash.sh
+```
+
+Once the Jetson boots, configure networking with the CLI tools now included in
+the image:
+
+```bash
+# Discover interfaces
+ip link show
+iw dev
+
+# Verify SSH is up
+systemctl status sshd
+
+# Replace wlan0 with the interface reported by `iw dev`
+ip link set wlan0 up
+
+cat >/etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<'EOF'
+ctrl_interface=/run/wpa_supplicant
+update_config=1
+network={
+    ssid="YOUR_WIFI_SSID"
+    psk="YOUR_WIFI_PASSWORD"
+}
+EOF
+
+wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+udhcpc -i wlan0
+ip -4 addr show wlan0
+```
+
+Then connect over SSH:
+
+```bash
+ssh root@<jetson-ip>
+```
+
+After bring-up is stable, rebuild with the hardened read-only / dm-verity flow
+for production images.
 
 ---
 

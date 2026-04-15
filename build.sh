@@ -7,14 +7,14 @@
 # merged with the base kas-project.yml at build time.
 #
 # Usage:
-#   ./build.sh [OPTIONS] [-- EXTRA_KAS_ARGS]
+#   ./build.sh [OPTIONS] [-- KAS_BUILD_ARGS [-- BITBAKE_ARGS]]
 #
 # Examples:
 #   ./build.sh --cores 8 --rootfs ro --dm-verity               # production
 #   ./build.sh --cores 4 --rootfs overlayfs --dm-verity         # field debug
 #   ./build.sh --rootfs rw --no-dm-verity                       # dev iteration
 #   ./build.sh --cpu-affinity 0-3 --cores 4                     # pinned build
-#   ./build.sh --cores 4 --target demo-image-base -c populate_sdk  # build SDK
+#   ./build.sh -- --target demo-image-base -c populate_sdk         # build SDK
 # =============================================================================
 set -euo pipefail
 
@@ -28,8 +28,10 @@ if ! command -v kas >/dev/null 2>&1 && [[ -f "${SCRIPT_DIR}/.venv/bin/activate" 
 fi
 
 KAS_BASE="${SCRIPT_DIR}/kas-project.yml"
+DEFAULT_MACHINE="$(awk '$1 == "machine:" { print $2; exit }' "${KAS_BASE}")"
 CORES=""
 CPU_AFFINITY=""
+MACHINE="${DEFAULT_MACHINE}"
 ROOTFS_MODE="ro"         # ro | rw | overlayfs
 DM_VERITY="on"           # on | off
 TARGET=""
@@ -44,20 +46,23 @@ die()   { echo -e "${RED}[FATAL]${NC} $*" >&2; exit 1; }
 # ── Usage ────────────────────────────────────────────────────────────────────
 usage() {
     cat <<'EOF'
-Usage: ./build.sh [OPTIONS] [-- EXTRA_KAS_ARGS]
+Usage: ./build.sh [OPTIONS] [-- KAS_BUILD_ARGS [-- BITBAKE_ARGS]]
 
 Options:
   -c, --cores N            Number of CPU cores for BB_NUMBER_THREADS / PARALLEL_MAKE
                            (default: 80% of available cores)
   -a, --cpu-affinity MASK  CPU affinity mask for taskset (e.g., 0-7 or 0,2,4,6)
+  -m, --machine MACHINE    Override Yocto MACHINE (default: from kas-project.yml)
   -r, --rootfs MODE        Rootfs mode: ro | rw | overlayfs  (default: ro)
   -d, --dm-verity          Enable dm-verity signing  (default)
       --no-dm-verity       Disable dm-verity signing
   -t, --target IMAGE       Override bitbake target (default: from kas-project.yml)
   -h, --help               Show this help
 
-Extra arguments after -- are passed directly to kas, e.g.:
-  ./build.sh -- --cmd "bitbake -n demo-image-base"
+Arguments after the first -- are passed to `kas build`. Arguments after a
+second -- are forwarded to BitBake itself, e.g.:
+  ./build.sh -- --target demo-image-base -c populate_sdk
+  ./build.sh -- --target demo-image-base -c rootfs -- -f
 EOF
     exit 0
 }
@@ -67,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -c|--cores)        CORES="$2"; shift 2 ;;
         -a|--cpu-affinity) CPU_AFFINITY="$2"; shift 2 ;;
+        -m|--machine)      MACHINE="$2"; shift 2 ;;
         -r|--rootfs)       ROOTFS_MODE="$2"; shift 2 ;;
         -d|--dm-verity)    DM_VERITY="on"; shift ;;
         --no-dm-verity)    DM_VERITY="off"; shift ;;
@@ -79,6 +85,7 @@ done
 
 # ── Validate inputs ──────────────────────────────────────────────────────────
 [[ "$ROOTFS_MODE" =~ ^(ro|rw|overlayfs)$ ]] || die "Invalid --rootfs mode: $ROOTFS_MODE (must be ro|rw|overlayfs)"
+[[ -n "$MACHINE" ]] || die "Could not determine a default machine from ${KAS_BASE}. Use --machine."
 command -v kas >/dev/null 2>&1 || die "kas not found. Install: pip install kas"
 
 if [[ "$DM_VERITY" == "on" ]]; then
@@ -109,6 +116,8 @@ cat > "$OVERRIDE_FILE" <<YAML
 header:
   version: 14
 
+machine: ${MACHINE}
+
 local_conf_header:
   build-sh-cores: |
     BB_NUMBER_THREADS = "${CORES}"
@@ -122,6 +131,7 @@ case "$ROOTFS_MODE" in
         cat >> "$OVERRIDE_FILE" <<'YAML'
   build-sh-rootfs: |
     IMAGE_FEATURES:append = " read-only-rootfs"
+    SYSTEMD_ROOTFS_RO_DROPIN = "1"
 YAML
         ;;
     rw)
@@ -129,6 +139,7 @@ YAML
         cat >> "$OVERRIDE_FILE" <<'YAML'
   build-sh-rootfs: |
     IMAGE_FEATURES:remove = "read-only-rootfs"
+    SYSTEMD_ROOTFS_RO_DROPIN = "0"
 YAML
         ;;
     overlayfs)
@@ -137,6 +148,7 @@ YAML
   build-sh-rootfs: |
     IMAGE_FEATURES:append = " read-only-rootfs"
     IMAGE_INSTALL:append = " overlayfs-setup"
+    SYSTEMD_ROOTFS_RO_DROPIN = "1"
 YAML
         ;;
 esac
@@ -146,7 +158,7 @@ if [[ "$DM_VERITY" == "off" ]]; then
     warn "dm-verity: DISABLED — image will NOT be integrity-protected"
     cat >> "$OVERRIDE_FILE" <<'YAML'
   build-sh-verity: |
-    INHERIT:remove = "dm-verity-img"
+    IMAGE_CLASSES:remove = "dm-verity-img"
     DM_VERITY_IMAGE = ""
 YAML
 else
@@ -163,9 +175,27 @@ YAML
 fi
 
 # ── Build command assembly ───────────────────────────────────────────────────
-KAS_CMD=(kas build "${KAS_BASE}:${OVERRIDE_FILE}")
+KAS_BUILD_ARGS=()
+BITBAKE_ARGS=()
 if [[ ${#EXTRA_KAS_ARGS[@]} -gt 0 ]]; then
-    KAS_CMD=("kas" "${EXTRA_KAS_ARGS[@]}" "${KAS_BASE}:${OVERRIDE_FILE}")
+    SPLIT_EXTRA_ARGS="no"
+    for arg in "${EXTRA_KAS_ARGS[@]}"; do
+        if [[ "${SPLIT_EXTRA_ARGS}" == "no" && "${arg}" == "--" ]]; then
+            SPLIT_EXTRA_ARGS="yes"
+            continue
+        fi
+
+        if [[ "${SPLIT_EXTRA_ARGS}" == "yes" ]]; then
+            BITBAKE_ARGS+=("${arg}")
+        else
+            KAS_BUILD_ARGS+=("${arg}")
+        fi
+    done
+fi
+
+KAS_CMD=(kas build "${KAS_BUILD_ARGS[@]}" "${KAS_BASE}:${OVERRIDE_FILE}")
+if [[ ${#BITBAKE_ARGS[@]} -gt 0 ]]; then
+    KAS_CMD+=(-- "${BITBAKE_ARGS[@]}")
 fi
 
 # Wrap with taskset if CPU affinity is specified
@@ -180,6 +210,7 @@ echo ""
 info "┌─────────────────────────────────────────────┐"
 info "│  Jetson Orin Nano — Hardened BSP Build       │"
 info "├─────────────────────────────────────────────┤"
+info "│  Machine:    ${MACHINE}"
 info "│  Cores:      ${CORES} / ${TOTAL_CORES}"
 info "│  Affinity:   ${CPU_AFFINITY:-none (all cores)}"
 info "│  Rootfs:     ${ROOTFS_MODE}"

@@ -421,7 +421,7 @@ in `SRC_URI`. They are applied by `do_patch` in order.
 
 ```bash
 # Make your change in the recipe's devshell
-kas build kas-project.yml --cmd "bitbake <recipe> -c devshell"
+kas shell kas-project.yml -c "bitbake <recipe> -c devshell"
 # (inside devshell)
 git diff > /tmp/0001-my-fix.patch
 exit
@@ -687,16 +687,16 @@ do_install_append() { ... }     # ❌
 ```bash
 # 1. Edit recipe or source file
 # 2. Bump bitbake task explicitly (skip full dependency check):
-kas build kas-project.yml --cmd "bitbake <recipe> -c compile -f && bitbake <recipe> -c install -f"
+kas shell kas-project.yml -c "bitbake <recipe> -c compile -f && bitbake <recipe> -c install -f"
 
 # 3. Re-assemble image (fast — just re-packs rootfs)
-kas build kas-project.yml --cmd "bitbake demo-image-base -c rootfs -f"
+kas shell kas-project.yml -c "bitbake demo-image-base -c rootfs -f"
 ```
 
 ### devshell — work inside the recipe environment
 
 ```bash
-kas build kas-project.yml --cmd "bitbake <recipe> -c devshell"
+kas shell kas-project.yml -c "bitbake <recipe> -c devshell"
 # Inside devshell:
 cmake ${OECMAKE_SOURCEPATH} ${EXTRA_OECMAKE}   # test cmake config
 make -j4                                         # test compile
@@ -722,8 +722,8 @@ sudo umount /tmp/rootfs-mount
 
 ```bash
 # List all files provided by a recipe
-kas build kas-project.yml --cmd "oe-pkgdata-util list-pkg-files <recipe>"
+kas shell kas-project.yml -c "oe-pkgdata-util list-pkg-files <recipe>"
 
 # Check which package owns a file
-kas build kas-project.yml --cmd "oe-pkgdata-util find-path /usr/bin/my-app"
+kas shell kas-project.yml -c "oe-pkgdata-util find-path /usr/bin/my-app"
 ```

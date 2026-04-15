@@ -91,6 +91,7 @@ cython_debug/
 downloads/
 sstate-cache/
 flash-artifacts/
+stock-image/
 
 # Signing keys — NEVER commit
 keys/

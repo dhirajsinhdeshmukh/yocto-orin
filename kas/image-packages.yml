@@ -21,7 +21,7 @@ local_conf_header:
   # --- Core runtime utilities ---
   # Uncomment or add packages needed on the Jetson at runtime.
   image-base: |
-    IMAGE_INSTALL:append = ""
+    IMAGE_INSTALL:append = " iproute2 iw wpa-supplicant wpa-supplicant-cli wireless-regdb-static ethtool"
     # Examples — remove the leading # and add a space before the package name:
     # IMAGE_INSTALL:append = " htop strace lsof"
     # IMAGE_INSTALL:append = " python3 python3-pip python3-numpy"

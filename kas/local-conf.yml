@@ -28,9 +28,10 @@ local_conf_header:
   # --- dm-verity (RSA-3K signed) ---
   # Keys must be generated before build — see README.md § DM-Verity Signing.
   # Keys are excluded from git via .gitignore.
-  # Disable: build.sh --no-dm-verity  (injects INHERIT:remove = "dm-verity-img")
+  # Disable: build.sh --no-dm-verity  (injects IMAGE_CLASSES:remove = "dm-verity-img")
   dm-verity: |
-    INHERIT += "dm-verity-img"
+    DISTRO_FEATURES:append = " security integrity"
+    IMAGE_CLASSES += "dm-verity-img"
     DM_VERITY_IMAGE = "demo-image-base"
     DM_VERITY_IMAGE_TYPE = "ext4"
     DM_VERITY_SIGNING_KEY = "${TOPDIR}/../keys/dm-verity/rsa3k-key.pem"
@@ -43,13 +44,18 @@ local_conf_header:
     IMAGE_FEATURES:remove = "debug-tweaks"
     EXTRA_IMAGE_FEATURES = ""
     IMAGE_FEATURES:append = " read-only-rootfs"
+    SYSTEMD_ROOTFS_RO_DROPIN ?= "1"
 
   # --- Dev access: empty root password (REMOVE FOR PRODUCTION) ---
   # Enables serial/SSH login as root with no password for development.
   # Does NOT re-enable debug-tweaks (no passwordless sudo, no debug serial).
   # Remove this block when building production images.
+  # NOTE: both features are required:
+  #   empty-root-password  → removes root's password hash (passwd -d root)
+  #   allow-empty-password → sets PermitEmptyPasswords yes in sshd_config
+  #   allow-root-login     → sets PermitRootLogin yes in sshd_config
   dev-access: |
-    IMAGE_FEATURES:append = " allow-empty-password allow-root-login"
+    IMAGE_FEATURES:append = " empty-root-password allow-empty-password allow-root-login"
 
   # --- Build tuning (defaults, overridden at runtime by build.sh) ---
   # build.sh --cores N will inject BB_NUMBER_THREADS/PARALLEL_MAKE overrides

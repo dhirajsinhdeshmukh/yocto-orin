@@ -1,0 +1,13 @@
+[Unit]
+Description=Resize root filesystem on first writable boot
+ConditionPathExists=!/var/lib/physical-ai/rootfs-resized.stamp
+ConditionPathIsReadWrite=/
+After=local-fs.target systemd-remount-fs.service
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/physical-ai-firstboot-storage
+
+[Install]
+WantedBy=multi-user.target

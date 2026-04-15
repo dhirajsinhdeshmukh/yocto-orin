@@ -44,7 +44,7 @@ Options:
 
 Workflow:
   FAST (recommended):
-    1. Build SDK locally:  ./build.sh --target demo-image-base -- --cmd "bitbake demo-image-base -c populate_sdk"
+    1. Build SDK locally:  ./build.sh -- --target demo-image-base -c populate_sdk
     2. Find installer:     ls build/tmp/deploy/sdk/*.sh
     3. Build container:    ./kas-docker.sh --sdk-installer build/tmp/deploy/sdk/poky-*.sh
 

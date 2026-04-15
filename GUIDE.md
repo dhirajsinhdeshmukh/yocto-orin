@@ -64,10 +64,17 @@ meta-openembedded:
 > When in doubt: `ls <cloned-repo>/` and look for subdirs containing `conf/layer.conf`.
 
 ### Change the target machine
-Edit [kas-project.yml](kas-project.yml):
+Prefer a one-off override via `build.sh`:
+
+```bash
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity
+./build.sh --machine jetson-orin-nano-devkit --rootfs rw --no-dm-verity
+```
+
+If you want to change the repo default instead, edit [kas-project.yml](kas-project.yml):
 ```yaml
 machine: jetson-orin-nano-devkit-nvme    # NVMe boot (default)
-# machine: jetson-orin-nano-devkit       # eMMC / Orin Nano Super devkit
+# machine: jetson-orin-nano-devkit       # non-NVMe Orin devkit layout
 ```
 
 > `distro` is always `poky`. `meta-tegra` provides the MACHINE definitions only.
@@ -99,9 +106,16 @@ openssl req -new -x509 -key keys/dm-verity/rsa3k-key.pem \
 
 ## Flashing — Jetson Orin Nano Super (DevKit)
 
-The Orin Nano Super ships on the same **P3768 carrier board** as other Orin Nano DevKits.
-The module is a **P3767-0000 (8 GB, 67 TOPS)**. Use `machine: jetson-orin-nano-devkit` in
-[kas-project.yml](kas-project.yml) for the Super (eMMC on module; NVMe is add-on).
+This repo currently targets the Orin Nano Super path already encoded in the
+generated flash artifacts:
+
+- Carrier: **P3768**
+- Module: **P3767-0005**
+- Default MACHINE: `jetson-orin-nano-devkit-nvme`
+
+Use `jetson-orin-nano-devkit-nvme` for the NVMe flow. Use
+`jetson-orin-nano-devkit` only for the non-NVMe Orin devkit layout.
+Legacy Jetson Nano / T210 hardware is out of scope for this BSP.
 
 ### Step 1 — Enter Recovery Mode
 
@@ -131,13 +145,18 @@ in one step:
 ```
 
 `flash.sh` will:
-1. Install host dependencies (`device-tree-compiler`, `usbutils`) if missing
+1. Install host dependencies (`device-tree-compiler`, `usbutils`, `udisks2`) if missing
 2. Locate `build/tmp/deploy/images/jetson-orin-nano-devkit-nvme/demo-image-base-jetson-orin-nano-devkit-nvme.rootfs.tegraflash.tar.gz`
-3. Remove any previously extracted files from the build deploy directory (keeps it clean)
+3. Remove any previously extracted flash artifacts
 4. Extract the full archive into `flash-artifacts/jetson-orin-nano-devkit-nvme/`
-5. Warn if the Jetson is not in recovery mode
-6. Run `sudo ./doflash.sh` from the extracted directory
-7. Clean up `flash-artifacts/` when done
+5. Summarize the initrd flash flow from `.env.initrd-flash`
+6. Warn if the Jetson is not in recovery mode
+7. Run `sudo ./doflash.sh` from the extracted directory
+8. Preserve `flash-artifacts/` and any `log.initrd-flash.*` / `device-logs-*` output if flashing fails
+
+> **Expected behavior:** NVMe flashing uses the initrd flash path. The Jetson
+> reboots during deployment by design, then returns as USB storage so the host
+> can push the flash package and write partitions.
 
 **USB device IDs** — verify with `lsusb` before flashing:
 
@@ -146,12 +165,12 @@ in one step:
 | `0955:7523` | APX (recovery mode) — **ready to flash** |
 | `0955:7020` | L4T running (normal boot) — put in recovery mode first |
 
-> **Safety:** `flash.sh` never mutates `build/` content beyond removing its own
-> previously extracted files. The tarball itself is always preserved.
+> **Safety:** `flash.sh` never modifies the tegraflash tarball. When a flash
+> fails, the extracted artifacts and logs are preserved automatically.
 
-### Step 3 — Flash eMMC (Fallback / Orin Nano Super built-in)
+### Step 3 — Flash the Non-NVMe Devkit Path
 
-For the eMMC-based Orin Nano Super (`jetson-orin-nano-devkit` MACHINE, no `-nvme`):
+For the non-NVMe Orin devkit layout (`jetson-orin-nano-devkit` MACHINE):
 
 ```bash
 ./flash.sh --machine jetson-orin-nano-devkit
@@ -164,7 +183,7 @@ Alternatively, for rootfs-only re-flash (skips QSPI/bootloader — faster):
 ./flash.sh --no-flash --machine jetson-orin-nano-devkit
 sudo bmaptool copy \
     flash-artifacts/jetson-orin-nano-devkit/demo-image-base-jetson-orin-nano-devkit.wic.zst \
-    /dev/mmcblk0
+    /dev/sdX
 ```
 
 > **Note on QSPI:** The first flash (or after a boot firmware update) must go through
@@ -177,7 +196,7 @@ sudo bmaptool copy \
 ```bash
 # Root filesystem is read-only
 mount | grep " / "
-# /dev/mmcblk0p1 on / type ext4 (ro,relatime)
+# /dev/nvme0n1p1 on / type ext4 (ro,relatime)
 
 # dm-verity is active
 sudo veritysetup status rootfs
@@ -187,6 +206,48 @@ sudo veritysetup status rootfs
 # systemd enforces ro at mount level too
 systemctl show -.mount | grep Options
 # Options=ro
+```
+
+### Step 6 — Post-Deploy Networking (Writable Bring-Up)
+
+For first boot and manual Wi-Fi / SSH setup, use a writable image:
+
+```bash
+./build.sh --rootfs rw --no-dm-verity
+./flash.sh
+```
+
+On the Jetson:
+
+```bash
+# Discover interfaces
+ip link show
+iw dev
+
+# Verify SSH is running
+systemctl status sshd
+
+# Replace wlan0 with the interface reported by `iw dev`
+ip link set wlan0 up
+
+cat >/etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<'EOF'
+ctrl_interface=/run/wpa_supplicant
+update_config=1
+network={
+    ssid="YOUR_WIFI_SSID"
+    psk="YOUR_WIFI_PASSWORD"
+}
+EOF
+
+wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+udhcpc -i wlan0
+ip -4 addr show wlan0
+```
+
+Then connect from the host:
+
+```bash
+ssh root@<jetson-ip>
 ```
 
 ---
@@ -226,198 +287,114 @@ python3 -c "import yaml; yaml.safe_load(open('kas/layers.yml'))" && echo "OK"
 
 ## Build & Debug Commands
 
-### Build an image
+### Common build entrypoints
 
 ```bash
-# Full production build (reads kas-project.yml + all kas/ includes)
+# Full production build (default machine from kas-project.yml)
 kas build kas-project.yml
 
-# Via build.sh wrapper (recommended — handles keys validation, logging)
-./build.sh --cores 8 --rootfs ro --dm-verity
+# Writable bring-up build via wrapper (recommended for first boot)
+./build.sh --rootfs rw --no-dm-verity
 
-# Build a specific image without changing kas-project.yml
-kas build kas-project.yml --cmd "bitbake demo-image-full"
+# Override the machine for one run
+./build.sh --machine jetson-orin-nano-devkit --rootfs rw --no-dm-verity
 
-# Dry-run: parse all recipes, show task graph, do NOT build anything
-kas build kas-project.yml --cmd "bitbake -n demo-image-base"
+# Build a specific image target
+kas build --target demo-image-full kas-project.yml
 
-# Open an interactive bitbake shell inside the kas environment
-kas shell kas-project.yml
+# Build the SDK installer
+kas build --target demo-image-base -c populate_sdk kas-project.yml
+
+# Build the extensible SDK
+kas build --target demo-image-base -c populate_sdk_ext kas-project.yml
+
+# Parse recipes without building
+kas shell kas-project.yml -c "bitbake -n demo-image-base"
 ```
 
-### Build the SDK (cross-compile toolchain)
+### Shell-based inspection commands
 
 ```bash
-# Build the standalone SDK installer
-kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk"
-# Output: build/tmp/deploy/sdk/poky-glibc-x86_64-demo-image-base-aarch64-*.sh
-
-# Build the extensible SDK (includes devtool and full recipe metadata)
-kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk_ext"
-
-# Install the SDK locally
-./build/tmp/deploy/sdk/poky-glibc-x86_64-*.sh -d /opt/yocto-sdk -y
-
-# Activate the SDK environment (do this in every new shell)
-source /opt/yocto-sdk/environment-setup-aarch64-poky-linux
-
-# Verify cross-compiler
-$CC --version       # aarch64-poky-linux-gcc
-echo $SDKTARGETSYSROOT  # path to aarch64 sysroot
-```
-
-### Add a utility to the image
-
-```bash
-# 1. Find the recipe name
-kas shell kas-project.yml -c "bitbake -s | grep -i <name>"
-
-# 2. Add to kas/image-packages.yml
-#    IMAGE_INSTALL:append = " <recipe-name>"
-
-# 3. Rebuild only the image assembly (not the whole world)
-kas build kas-project.yml --cmd "bitbake demo-image-base"
-```
-
-### Remove a utility from the image
-
-```bash
-# Option A: Remove the package name from IMAGE_INSTALL in kas/image-packages.yml
-
-# Option B: Explicitly exclude a package that another recipe pulls in
-# Add to kas/image-packages.yml:
-#   IMAGE_INSTALL:remove = " <recipe-name>"
-#   PACKAGE_EXCLUDE = "<recipe-name>"
-
-# Rebuild image
-kas build kas-project.yml --cmd "bitbake demo-image-base"
-
-# Check what is installed in the final rootfs
-kas build kas-project.yml --cmd "bitbake demo-image-base -c rootfs"
-oe-pkgdata-util list-pkgs -p build/tmp/pkgdata/jetson-orin-nano-devkit-nvme/
-```
-
-### Add a library or tool to the SDK
-
-```bash
-# Host tool (runs in SDK shell on your build machine)
-# → Add to kas/sdk.yml: TOOLCHAIN_HOST_TASK:append = " nativesdk-cmake"
-
-# Target lib/header (cross-compiled for aarch64 sysroot)
-# → Add to kas/sdk.yml: TOOLCHAIN_TARGET_TASK:append = " opencv-dev"
-
-# Rebuild SDK after changes
-kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk"
-
-# List what is currently in the SDK sysroot
-ls /opt/yocto-sdk/sysroots/aarch64-poky-linux/usr/include/
-ls /opt/yocto-sdk/sysroots/x86_64-pokysdk-linux/usr/bin/   # host tools
-```
-
-### Remove a library from the SDK
-
-```bash
-# Remove the entry from TOOLCHAIN_TARGET_TASK or TOOLCHAIN_HOST_TASK in kas/sdk.yml
-# Then rebuild:
-kas build kas-project.yml --cmd "bitbake demo-image-base -c populate_sdk"
-```
-
----
-
-## Debugging Build Failures
-
-### Locate the failing task log
-
-Bitbake prints the log path on failure. Navigate directly:
-
-```bash
-# After a build failure, bitbake prints:
-# ERROR: Logfile of failure stored in: build/tmp/work/<arch>/<recipe>/<ver>/temp/log.do_<task>
-
-# Or find recent failure logs
-find build/tmp/work -name "log.do_*" -newer build/tmp/work -type f | sort -t/ -k1 | tail -20
-
-# Read the failure log
-cat build/tmp/work/aarch64-poky-linux/my-recipe/1.0/temp/log.do_compile
-```
-
-### Re-run a single task
-
-```bash
-# Re-run a specific task for a recipe (e.g. recompile after a patch)
-kas build kas-project.yml --cmd "bitbake <recipe> -c compile"
-
-# Force re-run even if sstate says it's current
-kas build kas-project.yml --cmd "bitbake <recipe> -c compile -f"
-
-# Clean a recipe's build artifacts and start fresh
-kas build kas-project.yml --cmd "bitbake <recipe> -c clean"
-
-# Clean a recipe and all rdependants (full cascade)
-kas build kas-project.yml --cmd "bitbake <recipe> -c cleansstate"
-```
-
-### Inspect a recipe interactively
-
-```bash
-# Open a shell inside the recipe's build environment (with all env vars set)
-kas build kas-project.yml --cmd "bitbake <recipe> -c devshell"
-
-# List all tasks a recipe provides
-kas build kas-project.yml --cmd "bitbake <recipe> -c listtasks"
-
-# Dump all variable values as bitbake sees them for a recipe
-kas build kas-project.yml --cmd "bitbake -e <recipe> | grep -A5 '^IMAGE_INSTALL'"
-
-# Show what provides a virtual package
-kas build kas-project.yml --cmd "bitbake -e virtual/kernel | grep '^PN'"
-```
-
-### Layer and recipe discovery
-
-```bash
-# Show all loaded layers and their priorities
+# Show loaded layers and priorities
 kas shell kas-project.yml -c "bitbake-layers show-layers"
 
 # Show which layer a recipe comes from
 kas shell kas-project.yml -c "bitbake-layers show-recipes <recipe>"
 
-# Find all recipes matching a pattern
+# Find recipes matching a pattern
 kas shell kas-project.yml -c "bitbake -s | grep <pattern>"
 
-# Show full dependency tree for a recipe
-kas build kas-project.yml --cmd "bitbake -g demo-image-base && cat pn-depends.dot | grep <recipe>"
+# Dump image install variables for a recipe
+kas shell kas-project.yml -c "bitbake -e <recipe> | grep -A5 '^IMAGE_INSTALL'"
 
-# Show what pulls in a package (reverse dependency lookup)
-kas build kas-project.yml --cmd "bitbake-layers show-recipes -f <recipe>"
+# Inspect dependency graph output
+kas shell kas-project.yml -c "bitbake -g demo-image-base && grep <recipe> pn-depends.dot"
+
+# Reverse provider lookup
+kas shell kas-project.yml -c "bitbake-layers show-recipes -f <recipe>"
 ```
 
-### Image rootfs inspection (without booting)
+### Re-run and debug individual tasks
 
 ```bash
-# Open an interactive shell inside the assembled rootfs (pseudo-mounted)
-kas build kas-project.yml --cmd "bitbake demo-image-base -c devshell"
+# Re-run a task
+kas build --target <recipe> -c compile kas-project.yml
 
-# List what packages ended up in the image
-kas build kas-project.yml --cmd \
-  "bitbake demo-image-base && cat build/tmp/deploy/images/*/demo-image-base*.manifest"
+# Force a task to re-run
+kas shell kas-project.yml -c "bitbake <recipe> -c compile -f"
 
-# Check rootfs size breakdown
-du -sh build/tmp/work/*/demo-image-base/*/rootfs/usr/
+# Clean build artifacts
+kas build --target <recipe> -c clean kas-project.yml
+
+# Clean sstate for a recipe
+kas build --target <recipe> -c cleansstate kas-project.yml
+
+# Open a recipe devshell
+kas shell kas-project.yml -c "bitbake <recipe> -c devshell"
+
+# List all tasks a recipe provides
+kas shell kas-project.yml -c "bitbake <recipe> -c listtasks"
 ```
 
-### sstate cache debugging
+### Image and package inspection
 
 ```bash
-# Check if sstate exists for a recipe+task hash
-kas build kas-project.yml --cmd "bitbake <recipe> -c cleansstate && bitbake <recipe>"
+# Re-assemble the image after package changes
+kas build --target demo-image-base kas-project.yml
 
-# Show the task signature hash for a recipe
-kas build kas-project.yml --cmd "bitbake-diffsigs build/tmp/stamps/ <recipe>"
+# Force the rootfs task only
+kas shell kas-project.yml -c "bitbake demo-image-base -c rootfs -f"
 
-# Find what changed between two builds (why cache missed)
-kas build kas-project.yml --cmd \
-  "bitbake-diffsigs build/tmp/sigdata.<old>.sigdata build/tmp/sigdata.<new>.sigdata"
+# List final image packages
+kas shell kas-project.yml -c "cat build/tmp/deploy/images/*/demo-image-base*.manifest"
+
+# Query pkgdata
+kas shell kas-project.yml -c "oe-pkgdata-util list-pkgs -p build/tmp/pkgdata/jetson-orin-nano-devkit-nvme"
+
+# Check which package owns a path
+kas shell kas-project.yml -c "oe-pkgdata-util find-path /usr/bin/my-app"
+```
+
+### Failure logs and cache debugging
+
+```bash
+# Find recent task logs
+find build/tmp/work -name "log.do_*" -type f | tail -20
+
+# Inspect a failure log
+cat build/tmp/work/aarch64-poky-linux/<recipe>/<ver>/temp/log.do_compile
+
+# Compare task signatures
+kas shell kas-project.yml -c "bitbake-diffsigs build/tmp/stamps/ <recipe>"
+
+# Check why a cache hit was missed
+kas shell kas-project.yml -c "bitbake-diffsigs build/tmp/sigdata.<old>.sigdata build/tmp/sigdata.<new>.sigdata"
+
+# Fetch everything without building
+kas shell kas-project.yml -c "bitbake --runall=fetch demo-image-base"
+
+# Parse all recipes and stop
+kas shell kas-project.yml -c "bitbake --parse-only"
 ```
 
 ### Common failure patterns
@@ -430,43 +407,5 @@ kas build kas-project.yml --cmd \
 | `do_compile` C/C++ error | Patch doesn't apply, or sysroot missing dep | Check `log.do_patch`, add missing `DEPENDS` |
 | `do_package_qa` failure | Bad file ownership / permissions in package | Fix `do_install` — use `install -m <mode>` |
 | `ERROR: Multiple .bb files are due to be built` | Two layers provide same recipe | Set `PREFERRED_PROVIDER` or adjust layer priority |
-| Whole build slower than expected | sstate miss after layer SHA update | Expected — sstate rebuilds; will be fast on next run |
-| `kas check` fails | YAML syntax error or missing include file | Run `python3 -c "import yaml; yaml.safe_load(open('kas-project.yml'))"` |
-| `All concatenated config files must belong to the same repository` | kas 5.2+ override file written to system `/tmp` | `build.sh` now writes to `${SCRIPT_DIR}/tmp/` instead |
-| Layer directory does not exist error | Layer key in `kas/layers.yml` names a non-existent subdir | Use `.` for flat repos (meta-tegra, meta-security); use subdir name for meta-openembedded etc. |
-
----
-
-## General bitbake Options & Features
-
-```bash
-# Build with verbose output (shows each task as it runs)
-bitbake <recipe> -v
-
-# Show all warnings and notes (not just errors)
-bitbake <recipe> -D
-
-# Resume a failed build from where it stopped
-bitbake <recipe>           # just re-run — bitbake skips already-completed tasks
-
-# Limit parallel jobs (overrides BB_NUMBER_THREADS for one run)
-bitbake <recipe> -j 4
-
-# Build multiple targets at once
-bitbake demo-image-base my-app
-
-# Build all images defined in target:
-kas build kas-project.yml
-
-# Show the environment for the build (all variables)
-bitbake -e | grep "^IMAGE_FEATURES"
-
-# Show recipe metadata (SRC_URI, do_install, etc.)
-bitbake -e <recipe> | less
-
-# Fetch all sources without building (pre-populate DL_DIR)
-kas build kas-project.yml --cmd "bitbake --runall=fetch demo-image-base"
-
-# Parse all recipes and check for errors (no build)
-kas build kas-project.yml --cmd "bitbake --parse-only"
-```
+| `All concatenated config files must belong to the same repository` | kas 5.2+ override file written outside the repo | Keep overrides under `${SCRIPT_DIR}/tmp/` |
+| Layer directory does not exist error | Layer key in `kas/layers.yml` names a non-existent subdir | Use `.` for flat repos and subdir names for repo sublayers |

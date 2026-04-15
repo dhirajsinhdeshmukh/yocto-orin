@@ -15,7 +15,51 @@ Production-grade Yocto BSP for the **NVIDIA Jetson Orin Nano** targeting NVMe bo
 | meta-security | scarthgap | `b13f1705` |
 | meta-physical-ai | local | — |
 
+
 ---
+
+## Overview: Brand-New Board to SSH Access
+
+This custom Orin distro is built for Jetson Orin Nano NVMe boot with a hardened
+rootfs: dm-verity signed, systemd-enforced read-only mounts, and optional
+overlayfs for a volatile writable layer. If you have a brand-new board or a
+freshly erased system, follow this exact flow to get from power-off to a working
+SSH login.
+
+### End-to-End Flow
+
+1. Power off the Jetson.
+2. Put it into recovery mode by shorting **FC_REC** to **GND** on the recovery header.
+3. Connect **USB-C** to the Jetson and **USB-A** to the host laptop.
+4. Power on the board.
+5. Verify recovery mode on the host with `lsusb`.
+6. Build a writable bring-up image.
+7. Flash the board.
+8. Let the board boot normally.
+9. Find its IP address with `nmap`.
+10. Log in with SSH.
+
+### Commands
+
+```bash
+# 1. Verify the Jetson is in recovery mode
+lsusb | grep -i nvidia
+
+# Expected recovery-mode device
+# Bus 00X Device 0XX: ID 0955:7523 NVIDIA Corp. APX
+
+# 2. Build a writable bring-up image for first boot
+./build.sh --rootfs rw --no-dm-verity
+
+# 3. Flash the board
+./flash.sh
+
+# 4. After the board boots, discover its IP on the local network
+nmap -sn 192.168.1.0/24
+
+# 5. Connect over SSH
+ssh root@<jetson-ip>
+```
 
 ## Prerequisites
 

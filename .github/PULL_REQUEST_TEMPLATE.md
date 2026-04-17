@@ -15,6 +15,7 @@
 - [ ] `python3 -c "import yaml; yaml.safe_load(open('kas-project.yml'))"` passes
 - [ ] All new layers in `kas/layers.yml` use a pinned **commit SHA**, not a branch name
 - [ ] No keys, passwords, or secrets added
+- [ ] Docs updated if user-visible workflow, flashing, caching, or recipe guidance changed
 
 ### Image / Layer Changes
 - [ ] `kas shell kas-project.yml -c "bitbake-layers show-layers"` succeeds

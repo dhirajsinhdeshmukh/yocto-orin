@@ -10,6 +10,7 @@ body:
       options:
         - kas config / layer resolution
         - Yocto build failure (bitbake error)
+        - Cache / sstate / stale TMPDIR
         - dm-verity / signing
         - Flashing (tegra-flash / bmaptool)
         - Docker SDK container

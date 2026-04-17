@@ -161,6 +161,16 @@ intended for writable, non-dm-verity builds.
 
 ---
 
+## Additional Guides
+
+- [docs/GUIDE.md](docs/GUIDE.md) — repo map, flashing flow, and day-to-day build commands
+- [docs/RECIPES.md](docs/RECIPES.md) — layer and recipe development patterns
+- [docs/CACHING.md](docs/CACHING.md) — `downloads/`, `sstate-cache/`, `build/tmp/`, and cleanup guidance
+- [docs/OTA.md](docs/OTA.md) — A/B and RAUC update design notes
+- [docs/DEVICE-TREE.md](docs/DEVICE-TREE.md) — DTB selection, artifacts, and partition mapping
+
+---
+
 ## Build Script Reference
 
 ```
@@ -269,6 +279,10 @@ yocto_orin/
 ```
 
 To share across machines, copy or NFS-mount `downloads/` and `sstate-cache/`.
+
+For detailed guidance on what hurts cache reuse, when to clear `build/tmp/`
+versus `sstate-cache/`, and the safest cleanup order, see
+[docs/CACHING.md](docs/CACHING.md).
 
 ---
 
@@ -678,6 +692,12 @@ yocto_orin/
 ├── kas-docker.sh                       # Docker build & push script (stable/head tags)
 ├── .gitignore
 ├── .dockerignore
+├── docs/
+│   ├── GUIDE.md                        # Repo navigation, flashing, and common tasks
+│   ├── RECIPES.md                      # Layer and recipe development guide
+│   ├── CACHING.md                      # downloads/, sstate-cache/, TMPDIR cleanup guide
+│   ├── OTA.md
+│   └── DEVICE-TREE.md
 ├── keys/                               # ⛔ NOT in git
 │   └── dm-verity/
 │       ├── rsa3k-key.pem

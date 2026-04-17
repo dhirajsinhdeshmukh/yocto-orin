@@ -44,7 +44,7 @@ CI enforces this for `meta-physical-ai`.
 
 ## Adding a Remote Community Layer
 
-Edit [kas/layers.yml](kas/layers.yml). **Always pin to a commit SHA.**
+Edit [kas/layers.yml](../kas/layers.yml). **Always pin to a commit SHA.**
 
 ### Step 1 — Get the current scarthgap HEAD SHA
 

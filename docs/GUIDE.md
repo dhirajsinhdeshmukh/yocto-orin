@@ -2,6 +2,9 @@
 
 Quick reference for navigating the repo, adding things, and flashing the board.
 
+See also [CACHING.md](CACHING.md) for how `downloads/`, `sstate-cache/`, and
+`build/tmp/` behave in this repo and when they should be cleared.
+
 ---
 
 ## File Map
@@ -72,21 +75,21 @@ vim meta-physical-ai/recipes-bsp/tegra-binaries/files/flash_l4t_t234_nvme_physic
 ---
 
 ### Add a package to the Jetson rootfs
-Edit [kas/image-packages.yml](kas/image-packages.yml):
+Edit [kas/image-packages.yml](../kas/image-packages.yml):
 ```yaml
 image-base: |
   IMAGE_INSTALL:append = " htop python3 can-utils"
 ```
 
 ### Add a library to the SDK sysroot
-Edit [kas/sdk.yml](kas/sdk.yml):
+Edit [kas/sdk.yml](../kas/sdk.yml):
 ```yaml
 sdk-target: |
   TOOLCHAIN_TARGET_TASK:append = " opencv-dev protobuf-dev"
 ```
 
 ### Add a new Yocto layer
-Edit [kas/layers.yml](kas/layers.yml) — add a new repo block with a pinned SHA:
+Edit [kas/layers.yml](../kas/layers.yml) — add a new repo block with a pinned SHA:
 ```yaml
 meta-openembedded:
   url: "https://git.openembedded.org/meta-openembedded"
@@ -110,7 +113,7 @@ Prefer a one-off override via `build.sh`:
 ./build.sh --machine jetson-orin-nano-devkit --rootfs rw --no-dm-verity
 ```
 
-If you want to change the repo default instead, edit [kas-project.yml](kas-project.yml):
+If you want to change the repo default instead, edit [kas-project.yml](../kas-project.yml):
 ```yaml
 machine: jetson-orin-nano-devkit-nvme    # NVMe boot (default)
 # machine: jetson-orin-nano-devkit       # non-NVMe Orin devkit layout

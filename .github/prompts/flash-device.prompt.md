@@ -21,16 +21,15 @@ You are helping flash a Yocto image to a Jetson Orin Nano or Orin Nano Super.
 
 ### NVMe (jetson-orin-nano-devkit-nvme)
 ```bash
-cd build/tmp/deploy/images/jetson-orin-nano-devkit-nvme/
-sudo ./doflash.sh
+./flash.sh --erase-nvme
 ```
 
 ### eMMC (jetson-orin-nano-devkit / Orin Nano Super)
 ```bash
-cd build/tmp/deploy/images/jetson-orin-nano-devkit/
-sudo ./doflash.sh
+./flash.sh --machine jetson-orin-nano-devkit
 # or for raw image (rootfs only, QSPI must already be flashed):
-sudo bmaptool copy demo-image-base-*.wic.zst /dev/mmcblk0
+./flash.sh --no-flash --machine jetson-orin-nano-devkit
+sudo bmaptool copy flash-artifacts/jetson-orin-nano-devkit/demo-image-base-*.wic.zst /dev/mmcblk0
 ```
 
 ## Post-Flash Verification
@@ -44,3 +43,6 @@ systemctl show -.mount | grep Options  # should show Options=ro
 Based on the user's board and goal (initial flash / re-flash rootfs / recovery),
 provide the exact sequence of commands with any prerequisite checks.
 Ask the user which storage target if not specified.
+
+Prefer the repo wrappers and documented flows in `docs/GUIDE.md` unless the
+user explicitly asks for low-level `doflash.sh` steps.

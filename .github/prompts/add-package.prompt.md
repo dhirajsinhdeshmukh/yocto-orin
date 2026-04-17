@@ -7,6 +7,7 @@ You are helping add a package to either the Jetson rootfs image or the cross-com
 - Rootfs packages → `kas/image-packages.yml` → `IMAGE_INSTALL:append`
 - SDK host tools  → `kas/sdk.yml` → `TOOLCHAIN_HOST_TASK:append = " nativesdk-<name>"`
 - SDK target libs → `kas/sdk.yml` → `TOOLCHAIN_TARGET_TASK:append = " <name>-dev"`
+- Repo usage guide: `docs/GUIDE.md`
 
 ## Rules
 - The leading space inside the quoted string is **required** by bitbake's append operator.

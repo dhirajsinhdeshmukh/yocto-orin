@@ -6,6 +6,7 @@ You are helping add a new Yocto layer to this BSP project.
 ## Context
 This project uses `kas` with layers pinned to commit SHAs in `kas/layers.yml`.
 The Yocto release is scarthgap (5.0). Never use a branch name as `refspec`.
+Reference guide: `docs/RECIPES.md`
 
 ## Task
 Add the layer the user requests by:

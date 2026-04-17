@@ -12,6 +12,14 @@ Learn this project's structure before suggesting changes.
 - **Security posture:** dm-verity signed rootfs + read-only rootfs (systemd-enforced)
 - **Custom layer:** `meta-physical-ai/` — our own recipes, always edit here for custom logic
 
+## Reference Docs
+
+- `docs/GUIDE.md` — repo map, flashing workflow, and common commands
+- `docs/RECIPES.md` — recipe and layer development guide
+- `docs/CACHING.md` — cache layout, cache effectiveness, and cleanup rules
+- `docs/OTA.md` — A/B update architecture and RAUC notes
+- `docs/DEVICE-TREE.md` — DTB and partition-layout reference
+
 ## File Ownership Rules
 
 | To do this | Edit this file | Key variable |
@@ -54,6 +62,8 @@ Learn this project's structure before suggesting changes.
 - Override files **must live inside the repo tree** (`${SCRIPT_DIR}/tmp/`) — kas 5.2+ rejects concatenating files from different VCS roots (e.g. `/tmp`)
 - The generated override must **not** include an `includes:` stanza re-pointing at `kas-project.yml` — that would be a circular double-load
 - `build.sh` auto-activates `.venv/bin/activate` when `kas` is not already on `PATH`
+- Prefer the repo's `./flash.sh` wrapper for flashing guidance; only drop down
+  to `doflash.sh` when working with already extracted artifacts on purpose
 
 ## Layer Architecture
 

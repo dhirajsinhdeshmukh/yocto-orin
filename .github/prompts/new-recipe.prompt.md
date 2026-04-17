@@ -7,6 +7,7 @@ You are helping create a new Yocto recipe inside the `meta-physical-ai` custom l
 - Custom layer: `meta-physical-ai/`
 - Yocto release: scarthgap (5.0) — use `:` variable operators, not `_`
 - Init system: systemd
+- Reference guide: `docs/RECIPES.md`
 
 ## Recipe Skeleton (for a systemd service)
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Record A/B boot outcome for network updates
+After=local-fs.target
+Wants=local-fs.target
+ConditionPathExists=/data/physical-ai-update/pending-slot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/physical-ai-ab-status-check
+
+[Install]
+WantedBy=multi-user.target

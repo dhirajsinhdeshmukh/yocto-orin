@@ -32,6 +32,45 @@ tmp/                             Ephemeral kas override YAMLs — gitignored
 
 ## Common Tasks
 
+### Understand the NVMe partition layout
+
+```
+nvme0n1  (~932 GB on 1 TB NVMe)
+├── p1   APP            64 GiB   /             Active rootfs slot A
+├── p2   APP_b          64 GiB   (unmounted)   Inactive rootfs slot B (OTA target)
+├── p3   A_kernel      128 MiB   (unmounted)   Slot-A kernel image
+├── p4   A_kernel-dtb  768 KiB   (unmounted)   Slot-A device tree
+├── p5   A_reserved  31.6 MiB   (unmounted)   Reserved space after A_kernel-dtb
+├── p6   B_kernel      128 MiB   (unmounted)   Slot-B kernel image
+├── p7   B_kernel-dtb  768 KiB   (unmounted)   Slot-B device tree
+├── p8   B_reserved  31.6 MiB   (unmounted)   Reserved space after B_kernel-dtb
+├── p9   recovery       80 MiB   (unmounted)   Recovery kernel
+├── p10  recovery-dtb  512 KiB   (unmounted)   Recovery device tree
+├── p11  esp             2 GiB   /boot/efi     Primary EFI system partition (UEFI launcher)
+├── p12  recovery_alt   80 MiB   (unmounted)   Backup recovery kernel
+├── p13  recovery-dtb_alt 512 KiB (unmounted)  Backup recovery device tree
+├── p14  esp_alt         2 GiB   (unmounted)   Backup EFI system partition
+└── p15  UDA           ~799 GiB  /data         User data — fills all remaining space
+```
+
+To **change partition sizes**: edit the XML layout file, rebuild, and re-flash with `--erase-nvme`:
+```bash
+# 1. Edit sizes in:
+vim meta-physical-ai/recipes-bsp/tegra-binaries/files/flash_l4t_t234_nvme_physical_ai_rootfs_ab.xml
+
+# 2. Rebuild tegraflash artifact
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity
+
+# 3. Re-flash (erase required when partition table changes)
+./flash.sh --erase-nvme
+```
+
+> **Important:** UDA (p15) uses `allocation_attribute 0x808` (fill-to-end) — its
+> size is computed automatically from remaining disk space. Do **not** give it a
+> hardcoded byte count in the XML.
+
+---
+
 ### Add a package to the Jetson rootfs
 Edit [kas/image-packages.yml](kas/image-packages.yml):
 ```yaml
@@ -210,17 +249,29 @@ systemctl show -.mount | grep Options
 
 ### Step 5 — Post-Deploy Networking (Writable Bring-Up)
 
-For first boot and manual Wi-Fi / SSH setup, use a writable image:
+For first boot and manual SSH setup, use a writable image and erase the NVMe if
+you just changed the partition layout:
 
 ```bash
 ./build.sh --rootfs rw --no-dm-verity
-./flash.sh
+./flash.sh --erase-nvme
 ```
 
-On the Jetson:
+The first boot service grows the active rootfs to fill its slot and formats the
+`UDA` partition as `/data` if needed.
+
+For wired networking, the devkit ethernet interface comes up with DHCP by
+default. From the host:
 
 ```bash
-# Discover interfaces
+nmap -sn 192.168.1.0/24 | grep -A1 -i nvidia
+ssh root@<jetson-ip>
+```
+
+On the Jetson, Wi-Fi remains optional:
+
+```bash
+# Discover interfaces if you need Wi-Fi
 ip link show
 iw dev
 
@@ -249,6 +300,19 @@ Then connect from the host:
 ```bash
 ssh root@<jetson-ip>
 ```
+
+### Stage an A/B update over SSH
+
+Once the board has been flashed once with the custom NVMe layout, you can write
+the inactive rootfs slot over the network:
+
+```bash
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity
+./network-ab-update.sh --host <jetson-ip> --reboot
+```
+
+This helper updates only `APP` / `APP_b`. It does not repartition the NVMe or
+update QSPI firmware, and it currently refuses dm-verity images.
 
 ---
 

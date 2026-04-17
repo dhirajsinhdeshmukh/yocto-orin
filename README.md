@@ -120,6 +120,10 @@ Keys **must** exist before the build. See [DM-Verity Signing](#dm-verity-signing
 # OverlayFS mode — read-only root + volatile writable tmpfs layer
 ./build.sh --rootfs overlayfs --dm-verity
 
+# Refresh only the staged tegraflash bundle after storage-layout or flash changes
+# Use the same image-mode flags as the build you intend to flash
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity --flash-artifacts-only
+
 # Pin to specific CPU cores
 ./build.sh --cpu-affinity 0-7 --cores 8
 ```
@@ -133,6 +137,27 @@ kas build kas-project.yml
 ### 3. Flash
 
 See [Flashing](#flashing) below.
+
+### 4. Future A/B Updates Over Network
+
+After the first USB recovery flash is complete, future rootfs updates can be
+staged to the inactive slot over SSH with:
+
+```bash
+./network-ab-update.sh --host <jetson-ip> --reboot
+```
+
+That helper:
+
+- streams the latest `demo-image-base-jetson-orin-nano-devkit-nvme.rootfs*.ext4`
+  image to the inactive slot (`APP` or `APP_b`)
+- marks the other slot active with `nvbootctrl`
+- optionally reboots into the updated slot
+- leaves a boot-status message visible on the next login
+
+This is an **A/B rootfs updater**, not a replacement for USB tegraflash. It
+does **not** repartition the NVMe or update QSPI boot firmware. It is currently
+intended for writable, non-dm-verity builds.
 
 ---
 
@@ -149,6 +174,8 @@ Options:
   -d, --dm-verity          Enable dm-verity signing (default)
       --no-dm-verity       Disable dm-verity
   -t, --target IMAGE       Override bitbake target
+      --flash-artifacts-only
+                           Rebuild and stage only the tegraflash bundle
   -h, --help               Show help
 ```
 
@@ -359,7 +386,16 @@ USB storage so the host can write the NVMe and QSPI partitions.
 
 ```bash
 # Put the Jetson in recovery mode first (see above), then:
+# First flash or after changing partition layout — always use --erase-nvme:
+./flash.sh --erase-nvme
+
+# Subsequent reflashes with same partition layout (no erase needed):
 ./flash.sh
+
+# Rebuild and stage only the latest tegraflash bundle after changing
+# partition layout or flash packaging logic. Reuse the same image-mode flags
+# as the build you intend to flash:
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity --flash-artifacts-only
 
 # Extract only (no flash) — useful for inspection:
 ./flash.sh --no-flash
@@ -375,11 +411,16 @@ USB storage so the host can write the NVMe and QSPI partitions.
 | `--machine MACHINE` | `jetson-orin-nano-devkit-nvme` | Yocto MACHINE name |
 | `--image IMAGE` | `demo-image-base` | Image recipe name |
 | `--usb-instance N` | auto | Forward `--usb-instance` to `doflash.sh` |
-| `--erase-nvme` | off | Erase the NVMe drive during initrd flash |
+| `--erase-nvme` | off | **Recommended for first flash or after partition layout changes.** Passes `blkdiscard` to the initrd flash flow to wipe the existing GPT before partitioning. Required if a stale partition table causes "partitioning failed" errors. |
 | `--force` | off | Continue if recovery mode is not detected |
 | `--no-flash` | off | Extract only; skip `doflash.sh` |
 | `--no-cleanup` | off | Preserve `flash-artifacts/` after flash |
 | `--skip-deps` | off | Skip host dependency check |
+
+`flash.sh` automatically prefers the newest timestamped tegraflash tarball in
+`build/tmp/deploy/images/<machine>/`. If the stable
+`*.rootfs.tegraflash.tar.gz` symlink points to an older artifact, the script
+warns and uses the newer staged tarball instead.
 
 #### USB Device ID Reference
 
@@ -395,15 +436,104 @@ Verify the Jetson USB state with `lsusb` before and after flashing:
 > `flash-artifacts/` directory and any `log.initrd-flash.*` or `device-logs-*`
 > output for debugging.
 
+#### Flash Troubleshooting
+
+If you changed the storage layout XML or other tegraflash packaging inputs and
+rebuilt only partial tasks, run:
+
+```bash
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity --flash-artifacts-only
+```
+
+before `./flash.sh`. This refreshes the staged tegraflash bundle in
+`build/tmp/deploy/images/...`, which is the location `flash.sh` uses when
+choosing the artifact to extract. Use the same `--machine`, `--rootfs`, and
+`--dm-verity` settings as the image you want to flash.
+
 ### NVMe Partition Layout
 
-The flash process creates:
+The flash process creates the following partitions. Partition numbers are GPT
+entry IDs assigned by `id=` in the XML layout — **not** position on disk. The
+order on disk matches the XML sequence in
+`meta-physical-ai/recipes-bsp/tegra-binaries/files/flash_l4t_t234_nvme_physical_ai_rootfs_ab.xml`.
 
-| Partition | Device | Contents |
-|---|---|---|
-| QSPI | mtdblock0 | MB1, MB2, UEFI bootloader, BCT |
-| APP | nvme0n1p1 | Root filesystem (ext4 + dm-verity) |
-| APP_b | nvme0n1p2 | A/B rootfs slot (if configured) |
+**QSPI (internal flash — not NVMe):**
+
+| Partition | Location | Size | Purpose |
+|---|---|---|---|
+| MB1 / MB2 / BCT | QSPI mtdblock0 | 64 MiB total | Early boot firmware, board configuration table |
+| UEFI / UEFI_b | QSPI mtdblock0 | — | UEFI bootloader A/B slots |
+| A_BOOTCONFIG / B_BOOTCONFIG | QSPI mtdblock0 | — | Per-slot boot-count / try-count variables used for rollback |
+
+**NVMe (nvme0n1) — verified live on device:**
+
+| # | Name | Size | Mounted | Purpose |
+|---|---|---|---|---|
+| p1 | APP | 64 GiB | `/` | **Active rootfs slot A.** Kernel mounts this as root on slot-A boots. `/dev/nvme0n1p1` is hardcoded as the slot-A device in `nvbootctrl`. |
+| p2 | APP_b | 64 GiB | — | **Inactive rootfs slot B.** Written by `network-ab-update.sh` or RAUC during an OTA update. Activated by `nvbootctrl set-active-boot-slot 1`. |
+| p3 | A_kernel | 128 MiB | — | Slot-A kernel image (`boot.img`). Loaded by UEFI before handing off to the kernel. |
+| p4 | A_kernel-dtb | 768 KiB | — | Slot-A device tree blob. Paired with the A_kernel. |
+| p5 | A_reserved_on_user | 31.6 MiB | — | Reserved space aligned after A_kernel-dtb; not currently used. |
+| p6 | B_kernel | 128 MiB | — | Slot-B kernel image. Identical role to A_kernel for the B boot path. |
+| p7 | B_kernel-dtb | 768 KiB | — | Slot-B device tree blob. |
+| p8 | B_reserved_on_user | 31.6 MiB | — | Reserved space aligned after B_kernel-dtb. |
+| p9 | recovery | 80 MiB | — | Recovery kernel image. Used by the UEFI recovery boot path and initrd-flash. |
+| p10 | recovery-dtb | 512 KiB | — | Device tree blob for the recovery kernel. |
+| p11 | esp | 2 GiB | `/boot/efi` | **Primary EFI system partition.** Contains the L4T UEFI launcher (`BOOTAA64.EFI`) and extlinux config. Mounted read-only after boot. |
+| p12 | recovery_alt | 80 MiB | — | Alternate (backup) recovery kernel. |
+| p13 | recovery-dtb_alt | 512 KiB | — | Alternate recovery device tree blob. |
+| p14 | esp_alt | 2 GiB | — | **Backup EFI system partition.** Used if `esp` (p11) is corrupt. Not mounted during normal operation. |
+| p15 | UDA | ~799 GiB (fills disk) | `/data` | **User data area.** Persistent storage for application data, logs, and OTA staging. Formatted ext4 on first boot by `physical-ai-firstboot-storage`. Sized automatically to fill all remaining NVMe space via `allocation_attribute 0x808` (fill-to-end). |
+
+**Notes:**
+
+- The layout works on **any NVMe ≥ ~270 GiB**. UDA auto-sizes to whatever
+  space remains, so exact drive capacity does not matter.
+- APP/APP_b are placed first (p1/p2) so their GPT entry IDs (`id="1"`,
+  `id="2"`) map to `/dev/nvme0n1p1` and `/dev/nvme0n1p2` regardless of the
+  order of other partitions on disk.
+- To change partition sizes, edit
+  `meta-physical-ai/recipes-bsp/tegra-binaries/files/flash_l4t_t234_nvme_physical_ai_rootfs_ab.xml`,
+  rebuild with `./build.sh`, and re-flash. Changing sizes requires a full USB
+  recovery flash (`./flash.sh --erase-nvme`) — it cannot be done over the
+  network.
+- The A/B boot flow is managed entirely in firmware. After `nvbootctrl
+  set-active-boot-slot`, the UEFI bootloader selects the requested slot on the
+  next reset. The current repo helper records which slot actually booted and
+  prints that result on the next login. A full OTA stack such as RAUC should
+  also handle long-term success confirmation and retry policy.
+
+### Network A/B Update
+
+Once the board has been provisioned once with `./flash.sh`, you can update the
+inactive slot over the network:
+
+```bash
+# Build a new writable image first
+./build.sh --machine jetson-orin-nano-devkit-nvme --rootfs rw --no-dm-verity
+
+# Push it to the inactive slot and reboot into it
+./network-ab-update.sh --host <jetson-ip> --reboot
+```
+
+Useful options:
+
+```bash
+# Use an explicit ext4 image
+./network-ab-update.sh --host <jetson-ip> \
+    --image build/tmp/deploy/images/jetson-orin-nano-devkit-nvme/demo-image-base-jetson-orin-nano-devkit-nvme.rootfs.ext4
+
+# Stage the update but do not reboot yet
+./network-ab-update.sh --host <jetson-ip> --no-reboot
+```
+
+Notes:
+
+- This helper updates only the inactive rootfs slot.
+- It does not change the partition table or flash QSPI.
+- It currently aborts if the selected image appears to use `dm-verity-img`.
+- On the next login, the device prints whether the new slot booted
+  successfully or whether firmware rolled back to the previous slot.
 
 ### Non-NVMe Devkit Flash (Fallback)
 
@@ -469,25 +599,54 @@ mount | grep overlay
 
 ### Post-Deploy Networking
 
-For first boot and manual SSH or Wi-Fi setup, use a writable bring-up image:
+For first boot and manual SSH setup, use a writable bring-up image:
 
 ```bash
 ./build.sh --rootfs rw --no-dm-verity
-./flash.sh
+./flash.sh --erase-nvme
 ```
 
-Once the Jetson boots, configure networking with the CLI tools now included in
-the image:
+#### Wired Ethernet (default — no configuration needed)
+
+The Jetson Orin Nano devkit ethernet interface (`enP8p1s0`) comes up via DHCP
+automatically on boot. Find the assigned IP on your host:
 
 ```bash
-# Discover interfaces
-ip link show
+# Scan the local subnet
+nmap -sn 192.168.1.0/24 | grep -A1 -i nvidia
+
+# Or check your router's DHCP leases
+```
+
+Connect over SSH (default user is `root`, no password on `--no-dm-verity` dev builds):
+
+```bash
+ssh root@<jetson-ip>
+```
+
+#### Interface Names
+
+The interface name is assigned by the kernel based on PCIe topology and is
+**not** `eth0`. On the Orin Nano devkit:
+
+| Interface | Type | Notes |
+|---|---|---|
+| `enP8p1s0` | Gigabit Ethernet | Primary wired interface (DHCP by default) |
+| `lo` | Loopback | 127.0.0.1 |
+
+Use `ip link show` or `ifconfig` to enumerate interfaces on the device. The
+exact name (`enP8p1s0`) is determined by the PCI bus path and will be consistent
+across reboots on the same hardware.
+
+#### Wi-Fi (optional)
+
+If a Wi-Fi module is attached:
+
+```bash
+# Discover the wireless interface
 iw dev
 
-# Verify SSH is up
-systemctl status sshd
-
-# Replace wlan0 with the interface reported by `iw dev`
+# Bring it up
 ip link set wlan0 up
 
 cat >/etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<'EOF'
@@ -502,12 +661,6 @@ EOF
 wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 udhcpc -i wlan0
 ip -4 addr show wlan0
-```
-
-Then connect over SSH:
-
-```bash
-ssh root@<jetson-ip>
 ```
 
 After bring-up is stable, rebuild with the hardened read-only / dm-verity flow

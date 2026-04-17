@@ -17,6 +17,7 @@ IMAGE_FEATURES += " \
 IMAGE_INSTALL += " \
     packagegroup-core-boot \
     kernel-modules \
+    physical-ai-storage \
     tegra-firmware \
     tegra-nvpmodel \
     util-linux \

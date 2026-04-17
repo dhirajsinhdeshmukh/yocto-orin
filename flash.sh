@@ -55,6 +55,7 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 step()  { echo -e "${CYAN}[STEP]${NC}  $*"; }
 die()   { echo -e "${RED}[FATAL]${NC} $*" >&2; exit 1; }
+warn_stderr() { echo -e "${YELLOW}[WARN]${NC}  $*" >&2; }
 
 cleanup_flash_artifacts() {
     local exit_code="$1"
@@ -156,8 +157,31 @@ find_tegraflash_tarball() {
     local machine="$3"
     local preferred="${deploy_dir}/${image}-${machine}.rootfs.tegraflash.tar.gz"
     local resolved=""
-    local candidate=""
+    local latest=""
     local -a matches=()
+
+    if [[ -d "${deploy_dir}" ]]; then
+        while IFS= read -r latest; do
+            matches+=("${latest}")
+        done < <(find "${deploy_dir}" -maxdepth 1 -type f -name "${image}-${machine}.rootfs-*.tegraflash.tar.gz" | sort)
+    fi
+
+    if [[ "${#matches[@]}" -gt 0 ]]; then
+        latest="${matches[$(("${#matches[@]}" - 1))]}"
+
+        if [[ -f "${preferred}" || -L "${preferred}" ]]; then
+            resolved="$(readlink -f "${preferred}" 2>/dev/null || true)"
+            if [[ -n "${resolved}" && -f "${resolved}" && "${resolved}" != "${latest}" ]]; then
+                warn_stderr "Stable tegraflash symlink points to older artifact: $(basename "${resolved}")"
+                warn_stderr "Using newer staged tarball instead: $(basename "${latest}")"
+            fi
+        fi
+
+        if [[ -f "${latest}" ]]; then
+            printf '%s\n' "${latest}"
+            return 0
+        fi
+    fi
 
     if [[ -f "${preferred}" || -L "${preferred}" ]]; then
         resolved="$(readlink -f "${preferred}" 2>/dev/null || true)"
@@ -167,25 +191,6 @@ find_tegraflash_tarball() {
         fi
         if [[ -f "${preferred}" ]]; then
             printf '%s\n' "${preferred}"
-            return 0
-        fi
-    fi
-
-    if [[ -d "${deploy_dir}" ]]; then
-        while IFS= read -r candidate; do
-            matches+=("${candidate}")
-        done < <(find "${deploy_dir}" -maxdepth 1 \( -type f -o -type l \) -name "${image}-${machine}.rootfs-*.tegraflash.tar.gz" | sort)
-    fi
-
-    if [[ "${#matches[@]}" -gt 0 ]]; then
-        candidate="${matches[$(("${#matches[@]}" - 1))]}"
-        resolved="$(readlink -f "${candidate}" 2>/dev/null || true)"
-        if [[ -n "${resolved}" && -f "${resolved}" ]]; then
-            printf '%s\n' "${resolved}"
-            return 0
-        fi
-        if [[ -f "${candidate}" ]]; then
-            printf '%s\n' "${candidate}"
             return 0
         fi
     fi

@@ -17,9 +17,10 @@ with **RAUC** — the recommended choice for this BSP.
 6. [Deploying an Update](#6-deploying-an-update)
 7. [dm-verity + OTA Workflow](#7-dm-verity--ota-workflow)
 8. [Rollback Behavior](#8-rollback-behavior)
-9. [RAUC + Mender Comparison (extended)](#9-rauc--mender-comparison-extended)
-10. [Testing OTA in QEMU](#10-testing-ota-in-qemu)
-11. [Reference](#11-reference)
+9. [Interim SSH A/B Updater](#9-interim-ssh-ab-updater)
+10. [RAUC + Mender Comparison (extended)](#10-rauc--mender-comparison-extended)
+11. [Testing OTA in QEMU](#11-testing-ota-in-qemu)
+12. [Reference](#12-reference)
 
 ---
 
@@ -30,14 +31,22 @@ The BSP already has the hardware and partition infrastructure for A/B OTA:
 | Component | Status | Notes |
 |---|---|---|
 | A/B QSPI boot partitions | **Present** | MB1, MB2, UEFI, BCT all have A/B slots in QSPI |
-| A/B rootfs partitions | **Present** | `APP` / `APP_b` on NVMe (28 GiB each) |
+| A/B rootfs partitions | **Present** | `APP` (nvme0n1p1, 64 GiB) / `APP_b` (nvme0n1p2, 64 GiB) — placed first in the GPT so partition numbers are stable regardless of other layout changes |
 | dm-verity | **Present** | RSA-3K signed; must be re-signed per slot per update |
-| read-only rootfs | **Present** | systemd-enforced; overlayfs handle writes |
-| A/B boot slot switching | **Missing** | Needs RAUC (or equivalent) + UEFI integration |
-| OTA bundle infrastructure | **Missing** | Needs RAUC server/client |
+| read-only rootfs | **Present** | systemd-enforced; overlayfs handles writes |
+| Persistent data partition | **Present** | `UDA` (nvme0n1p15, ~799 GiB on a 1 TB NVMe) — auto-sized fill-to-end, formatted ext4, mounted at `/data` on first boot |
+| Firmware slot control | **Present** | UEFI exposes A/B slot selection and retry state via `nvbootctrl`; the current repo helper switches slots and records the observed boot result |
+| OTA bundle infrastructure | **Missing** | Needs RAUC server/client or equivalent userspace updater |
 
-> **Short version:** The partitions are ready. You need a userspace update agent
-> (RAUC) and a bundle server (HTTP / hawkBit) to tie it together.
+> **Short version:** The disk layout and firmware slot control path are ready. You
+> still need a userspace update agent (RAUC, Mender, swupdate, or custom logic)
+> to write the inactive slot and request the slot switch.
+
+For this repo, there is now also a lightweight host-side helper:
+`./network-ab-update.sh`. It uses SSH to write a new rootfs image into the
+inactive slot and switch boot slots. It is useful for development and lab
+deployments, but it is not a full OTA framework and is not a replacement for
+RAUC in production.
 
 ---
 
@@ -420,7 +429,40 @@ rauc status mark-active && echo "V" > /dev/watchdog
 
 ---
 
-## 9. RAUC + Mender Comparison (extended)
+## 9. Interim SSH A/B Updater
+
+For development and same-network lab updates, the repo now includes a small
+host-side helper:
+
+```bash
+./network-ab-update.sh --host <jetson-ip> --reboot
+```
+
+It performs these steps:
+
+1. Connect to the running device over SSH.
+2. Detect the current boot slot with `nvbootctrl get-current-slot`.
+3. Stream the chosen `.ext4` rootfs image into the inactive slot (`APP` or `APP_b`).
+4. Mark the target slot active with `nvbootctrl set-active-boot-slot`.
+5. Optionally reboot into the updated slot.
+
+On the device, a small boot-time checker records whether the requested slot
+actually booted, or whether the firmware rolled back to the previous slot. That
+result is printed on the next interactive shell login and logged to the journal.
+
+Current limitations:
+
+- It does not update QSPI firmware, ESP contents, or partition layouts.
+- It assumes the device was already provisioned once using USB recovery flash.
+- It is currently intended for writable, non-dm-verity images.
+- It records the observed boot result after reboot, but it is not yet a full
+  success-confirmation policy manager like RAUC.
+- It is best suited to single-device or small lab workflows, not fleet
+  management.
+
+This makes it a good interim step before adding RAUC or another full OTA agent.
+
+## 10. RAUC + Mender Comparison (extended)
 
 For teams evaluating both options:
 
@@ -437,7 +479,7 @@ For teams evaluating both options:
 
 ---
 
-## 10. Testing OTA in QEMU
+## 11. Testing OTA in QEMU
 
 Before flashing to real hardware, you can test the OTA flow in QEMU with an
 emulated block device:
@@ -467,7 +509,7 @@ reboot
 
 ---
 
-## 11. Reference
+## 12. Reference
 
 | Resource | URL / Path |
 |---|---|

@@ -13,6 +13,7 @@
 #   ./build.sh --cores 8 --rootfs ro --dm-verity               # production
 #   ./build.sh --cores 4 --rootfs overlayfs --dm-verity         # field debug
 #   ./build.sh --rootfs rw --no-dm-verity                       # dev iteration
+#   ./build.sh --rootfs rw --no-dm-verity --flash-artifacts-only # refresh staged tegraflash bundle only
 #   ./build.sh --cpu-affinity 0-3 --cores 4                     # pinned build
 #   ./build.sh -- --target demo-image-base -c populate_sdk         # build SDK
 # =============================================================================
@@ -29,12 +30,18 @@ fi
 
 KAS_BASE="${SCRIPT_DIR}/kas-project.yml"
 DEFAULT_MACHINE="$(awk '$1 == "machine:" { print $2; exit }' "${KAS_BASE}")"
+DEFAULT_TARGET="$(awk '
+    /^target:/ { in_target=1; next }
+    in_target && $1 == "-" { print $2; exit }
+    in_target && NF == 0 { exit }
+' "${KAS_BASE}")"
 CORES=""
 CPU_AFFINITY=""
 MACHINE="${DEFAULT_MACHINE}"
 ROOTFS_MODE="ro"         # ro | rw | overlayfs
 DM_VERITY="on"           # on | off
 TARGET=""
+FLASH_ARTIFACTS_ONLY="no"
 EXTRA_KAS_ARGS=()
 
 # ── Color helpers ────────────────────────────────────────────────────────────
@@ -57,6 +64,9 @@ Options:
   -d, --dm-verity          Enable dm-verity signing  (default)
       --no-dm-verity       Disable dm-verity signing
   -t, --target IMAGE       Override bitbake target (default: from kas-project.yml)
+      --flash-artifacts-only
+                           Rebuild and stage only the tegraflash bundle for the
+                           selected image target
   -h, --help               Show this help
 
 Arguments after the first -- are passed to `kas build`. Arguments after a
@@ -77,6 +87,7 @@ while [[ $# -gt 0 ]]; do
         -d|--dm-verity)    DM_VERITY="on"; shift ;;
         --no-dm-verity)    DM_VERITY="off"; shift ;;
         -t|--target)       TARGET="$2"; shift 2 ;;
+        --flash-artifacts-only) FLASH_ARTIFACTS_ONLY="yes"; shift ;;
         -h|--help)         usage ;;
         --)                shift; EXTRA_KAS_ARGS=("$@"); break ;;
         *)                 die "Unknown option: $1  (use -h for help)" ;;
@@ -87,6 +98,10 @@ done
 [[ "$ROOTFS_MODE" =~ ^(ro|rw|overlayfs)$ ]] || die "Invalid --rootfs mode: $ROOTFS_MODE (must be ro|rw|overlayfs)"
 [[ -n "$MACHINE" ]] || die "Could not determine a default machine from ${KAS_BASE}. Use --machine."
 command -v kas >/dev/null 2>&1 || die "kas not found. Install: pip install kas"
+
+if [[ "${FLASH_ARTIFACTS_ONLY}" == "yes" && ${#EXTRA_KAS_ARGS[@]} -gt 0 ]]; then
+    die "--flash-artifacts-only does not accept extra kas/bitbake arguments after --. Use --target if you need a different image."
+fi
 
 if [[ "$DM_VERITY" == "on" ]]; then
     KEY="${SCRIPT_DIR}/keys/dm-verity/rsa3k-key.pem"
@@ -174,6 +189,17 @@ YAML
     info "Target override: ${TARGET}"
 fi
 
+IMAGE_TARGET="${TARGET:-${DEFAULT_TARGET}}"
+if [[ "${FLASH_ARTIFACTS_ONLY}" == "yes" && -z "${IMAGE_TARGET}" ]]; then
+    die "Could not determine the image target for --flash-artifacts-only. Use --target IMAGE."
+fi
+
+BUILD_MODE="standard build"
+if [[ "${FLASH_ARTIFACTS_ONLY}" == "yes" ]]; then
+    BUILD_MODE="flash-artifacts-only"
+    info "Flash artifact refresh uses the selected image mode; pass the same --machine/--rootfs/--dm-verity settings as the image you plan to flash."
+fi
+
 # ── Build command assembly ───────────────────────────────────────────────────
 KAS_BUILD_ARGS=()
 BITBAKE_ARGS=()
@@ -198,12 +224,51 @@ if [[ ${#BITBAKE_ARGS[@]} -gt 0 ]]; then
     KAS_CMD+=(-- "${BITBAKE_ARGS[@]}")
 fi
 
-# Wrap with taskset if CPU affinity is specified
-if [[ -n "$CPU_AFFINITY" ]]; then
-    command -v taskset >/dev/null 2>&1 || die "taskset not found. Install: apt install util-linux"
-    info "CPU affinity: taskset -c ${CPU_AFFINITY}"
-    KAS_CMD=(taskset -c "$CPU_AFFINITY" "${KAS_CMD[@]}")
-fi
+apply_cpu_affinity() {
+    local -n cmd_ref=$1
+
+    if [[ -n "$CPU_AFFINITY" ]]; then
+        command -v taskset >/dev/null 2>&1 || die "taskset not found. Install: apt install util-linux"
+        info "CPU affinity: taskset -c ${CPU_AFFINITY}"
+        cmd_ref=(taskset -c "$CPU_AFFINITY" "${cmd_ref[@]}")
+    fi
+}
+
+find_latest_flash_artifact() {
+    local search_dir="$1"
+    local image="$2"
+    local machine="$3"
+    local suffix="$4"
+
+    find "${search_dir}" -maxdepth 1 -type f -name "${image}-${machine}.rootfs-*.tegraflash.${suffix}" | sort | tail -n1
+}
+
+promote_flash_artifacts() {
+    local image="$1"
+    local machine="$2"
+    local work_dir
+    local deploy_dir
+    local latest_tar
+    local latest_zip
+
+    work_dir="$(find "${SCRIPT_DIR}/build/tmp/work" -type d -path "*/${image}/*/deploy-${image}-image-complete" | sort | tail -n1)"
+    [[ -n "${work_dir}" ]] || die "Could not locate workdir deploy output for ${image}. Expected a deploy-${image}-image-complete directory."
+
+    deploy_dir="${SCRIPT_DIR}/build/tmp/deploy/images/${machine}"
+    mkdir -p "${deploy_dir}"
+
+    latest_tar="$(find_latest_flash_artifact "${work_dir}" "${image}" "${machine}" "tar.gz")"
+    [[ -n "${latest_tar}" ]] || die "No tegraflash tarball was produced in ${work_dir}"
+    cp -f "${latest_tar}" "${deploy_dir}/"
+    ln -sfn "$(basename "${latest_tar}")" "${deploy_dir}/${image}-${machine}.rootfs.tegraflash.tar.gz"
+    info "Promoted $(basename "${latest_tar}") to ${deploy_dir}"
+
+    latest_zip="$(find_latest_flash_artifact "${work_dir}" "${image}" "${machine}" "zip" || true)"
+    if [[ -n "${latest_zip}" ]]; then
+        cp -f "${latest_zip}" "${deploy_dir}/"
+        ln -sfn "$(basename "${latest_zip}")" "${deploy_dir}/${image}-${machine}.rootfs.tegraflash.zip"
+    fi
+}
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
@@ -215,11 +280,25 @@ info "│  Cores:      ${CORES} / ${TOTAL_CORES}"
 info "│  Affinity:   ${CPU_AFFINITY:-none (all cores)}"
 info "│  Rootfs:     ${ROOTFS_MODE}"
 info "│  dm-verity:  ${DM_VERITY}"
+info "│  Mode:       ${BUILD_MODE}"
 info "│  Target:     ${TARGET:-<from kas-project.yml>}"
 info "│  Override:   ${OVERRIDE_FILE}"
 info "└─────────────────────────────────────────────┘"
 echo ""
 
 # ── Execute ──────────────────────────────────────────────────────────────────
+if [[ "${FLASH_ARTIFACTS_ONLY}" == "yes" ]]; then
+    FLASH_REFRESH_CMD="bitbake ${IMAGE_TARGET} -c image_tegraflash -f"
+    KAS_FLASH_CMD=(kas shell "${KAS_BASE}:${OVERRIDE_FILE}" -c "${FLASH_REFRESH_CMD}")
+    apply_cpu_affinity KAS_FLASH_CMD
+
+    info "Refreshing flash artifacts for ${IMAGE_TARGET}..."
+    info "Executing: ${KAS_FLASH_CMD[*]}"
+    "${KAS_FLASH_CMD[@]}"
+    promote_flash_artifacts "${IMAGE_TARGET}" "${MACHINE}"
+    exit 0
+fi
+
+apply_cpu_affinity KAS_CMD
 info "Executing: ${KAS_CMD[*]}"
 exec "${KAS_CMD[@]}"

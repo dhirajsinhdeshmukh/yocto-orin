@@ -192,16 +192,20 @@ by `tegra-flash.py` during the flash process.
 
 ### NVMe / eMMC — APP Partitions
 
-These are defined in `external-flash.xml.in` for the NVMe target:
+These are defined in the custom NVMe layout XML shipped by this repo:
+`meta-physical-ai/recipes-bsp/tegra-binaries/files/flash_l4t_t234_nvme_physical_ai_rootfs_ab.xml`.
 
 | Partition | Device | Size | Contents |
 |---|---|---|---|
-| `APP` | `nvme0n1p1` | 28 GiB | Root filesystem (ext4) |
-| `APP_b` | `nvme0n1p2` | 28 GiB | A/B root filesystem slot |
-| `UDA` | `nvme0n1p3` | remainder | User data area |
+| `APP` | `nvme0n1p1` | 64 GiB | Active root filesystem slot |
+| `APP_b` | `nvme0n1p2` | 64 GiB | Inactive root filesystem slot |
+| `esp` | `nvme0n1p11` | 2 GiB | Primary EFI system partition |
+| `esp_alt` | `nvme0n1p14` | 2 GiB | Backup EFI system partition |
+| `UDA` | `/dev/disk/by-partlabel/UDA` | remainder on the configured NVMe | Persistent `/data` area |
 
-> The exact sizes are defined in `external-flash.xml.in`. The APP partition
-> is 28 GiB (30,064,771,072 bytes) per the partition layout file.
+> The repo now ships a custom 1 TB NVMe layout:
+> `flash_l4t_t234_nvme_physical_ai_rootfs_ab.xml`. The exact device size is
+> derived from `TEGRA_EXTERNAL_DEVICE_SECTORS = "1953525168"`.
 
 ---
 

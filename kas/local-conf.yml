@@ -63,3 +63,18 @@ local_conf_header:
   tuning: |
     BB_NUMBER_THREADS ?= "${@int(os.cpu_count() * 0.8)}"
     PARALLEL_MAKE ?= "-j ${@int(os.cpu_count() * 0.8)}"
+
+  # --- NVMe A/B storage layout ---
+  # Target: 1 TB NVMe
+  #   APP     = 64 GiB
+  #   APP_b   = 64 GiB
+  #   esp     = 2 GiB
+  #   esp_alt = 2 GiB
+  #   UDA     = remainder
+  # UEFI rootfs redundancy is enabled so failed boots fall back to the last
+  # good slot once nvbootctrl verification has not succeeded.
+  storage-layout: |
+    USE_REDUNDANT_FLASH_LAYOUT_DEFAULT = "1"
+    ROOTFSPART_SIZE_DEFAULT = "137438953472"
+    TEGRA_EXTERNAL_DEVICE_SECTORS = "1953525168"
+    PARTITION_LAYOUT_EXTERNAL = "flash_l4t_t234_nvme_physical_ai_rootfs_ab.xml"
